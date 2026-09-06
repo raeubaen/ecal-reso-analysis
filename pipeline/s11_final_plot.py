@@ -120,6 +120,8 @@ def draw_terms(pad, terms, recipe, bes_column):
     raw.Draw("PL")
     legend.AddEntry(raw, "#sigma/#mu", "pl")
     for term in TERMS_BY_RECIPE[recipe]:
+        if term == "bes_syst" and bes_column == "bes_nom":
+            continue                       # no BES systematic when the nominal BES is subtracted
         label, marker, colour = TERM_STYLE[term]
         graph = graph_of(terms, bes_column if term == "bes" else term, positive_only=True)
         if graph is None:

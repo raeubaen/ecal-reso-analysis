@@ -130,6 +130,8 @@ def draw_figure(args, suffix, name, mode, fixed_from_340, points_all, terms_all,
         axis.plot(term_energy, [row["sigma_raw"] for row in terms], "o-", ms=5, color="0.35", label="$\\sigma/\\mu$")
         smallest = min(row["sigma_raw"] for row in terms)
         for term in TERMS_BY_RECIPE[recipe]:
+            if term == "bes_syst" and bes_column == "bes_nom":
+                continue                   # no BES systematic when the nominal BES is subtracted
             label, style, colour = TERM_STYLE[term]
             values = np.array([row[bes_column if term == "bes" else term] for row in terms], float)
             values = np.where(np.isfinite(values) & (values > 0), values, np.nan)

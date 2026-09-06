@@ -12,8 +12,8 @@ hand-set hodoscope window are marked as such. No fit here: stage 10 does the fit
 Writes 09_resolution_points.csv (energy_true, sigma_over_E, its error, and in_fit, the
 flag stage 10 uses: 0 for the energies listed in --nofit-energies) and
 09_resolution_terms.png. With --bes nominal (codiceA only) the central value has the
-nominal BES (BES_formula) subtracted instead of the conservative one, the error bar is
-unchanged, and the files carry the suffix _nominal_bes.
+nominal BES (BES_formula) subtracted instead of the conservative one, the error bar has
+no BES systematic (err_total_nominal_bes), and the files carry the suffix _nominal_bes.
 """
 
 import argparse
@@ -53,7 +53,7 @@ def styled(graph, marker, colour, size=1.1):
     return graph
 
 
-def draw_top(pad, rows, resistance, selection, central="sigma_corr", bes_label="BES"):
+def draw_top(pad, rows, resistance, selection, central="sigma_corr", bes_label="BES", error_column="err_total"):
     pad.SetGrid()
     pad.SetLeftMargin(0.13)
     raw = common.keep(styled(graph_of(rows, "sigma_raw"), 20, ROOT.kGray + 2))
@@ -64,7 +64,7 @@ def draw_top(pad, rows, resistance, selection, central="sigma_corr", bes_label="
     legend = common.keep(ROOT.TLegend(0.45, 0.6, 0.89, 0.88))
     legend.SetTextSize(0.03)
     legend.AddEntry(raw, "#sigma/#mu", "pl")
-    corrected = graph_of(rows, central, "err_total", positive_only=True)
+    corrected = graph_of(rows, central, error_column, positive_only=True)
     if corrected is not None:
         common.keep(styled(corrected, 22, ROOT.kRed + 1, 1.4)).Draw("PL")
         legend.AddEntry(corrected, f"- {bes_label} - synchrotron" if rows[0]["recipe"] == "uniforme"
@@ -135,12 +135,13 @@ def main():
     if args.bes == "nominal" and recipe != "codiceA":
         parser.error("--bes nominal exists only in the codiceA recipe")
     central = "sigma_corr_nominal_bes" if args.bes == "nominal" else "sigma_corr"
+    error_column = "err_total_nominal_bes" if args.bes == "nominal" else "err_total"
     bes_column = "bes_nom" if args.bes == "nominal" else "bes"
     suffix = "_nominal_bes" if args.bes == "nominal" else ""
     points = [dict(resistance=row["resistance"], energy=row["energy"], energy_true=row["energy_true"],
                    selection=selection, recipe=recipe, window=row["window"], n_run=row["n_run"],
                    pooled=row["pooled"], sigma_raw=row["sigma_raw"], sigma_over_E=row[central],
-                   err=row["err_total"], in_fit=int(row["energy"] not in args.nofit_energies))
+                   err=row[error_column], in_fit=int(row["energy"] not in args.nofit_energies))
               for row in rows]
     common.write_csv(os.path.join(args.workdir, f"09_resolution_points{suffix}.csv"), points, COLUMNS)
 
@@ -150,7 +151,7 @@ def main():
     for column, resistance in enumerate(resistances):
         subset = sorted([row for row in rows if row["resistance"] == resistance], key=lambda row: row["energy"])
         draw_top(canvas.cd(column + 1), subset, resistance, selection, central,
-                 "BES (nominal)" if args.bes == "nominal" else "BES")
+                 "BES (nominal)" if args.bes == "nominal" else "BES", error_column)
         draw_terms(canvas.cd(len(resistances) + column + 1), subset, recipe, bes_column)
     common.save_canvas(canvas, os.path.join(args.workdir, f"09_resolution_terms{suffix}.png"))
 

@@ -148,11 +148,18 @@ double Crystal Ball converges to a different local minimum. The fits:
 | centroid 0.182 (slide 26) | 340 | N 279 ± 7, S 3.315 ± 0.206, C 0.294 ± 0.016, χ² 22.4/9 | identical |
 | | 400 | N 279 ± 4, C 0.330, χ² 29.6/6 | N 279 ± 4, C 0.338, χ² 29.6/6 |
 | | 500 | N 268 ± 16, C 0.265, χ² 6.6/3 | N 266 ± 16, C 0.266, χ² 6.8/3 |
-| hodoscope, nominal BES (slide 25) | 340 | N 287 ± 14, S 2.501 ± 0.460, C 0.310 | N 286 ± 14, S 2.574 ± 0.432, C 0.303 |
+| hodoscope, nominal BES (slide 25) | 340 | N 285 ± 14, S 2.588 ± 0.430, C 0.302 ± 0.021, χ² 21.2/9 | N 286 ± 14, S 2.574 ± 0.432, C 0.303 ± 0.021, χ² 21.4/9 |
+| | 400 | N 249 ± 11, C 0.305, χ² 22.6/6 | N 249 ± 11, C 0.304, χ² 22.7/6 |
+| | 500 | N 252 ± 10, C 0.288, χ² 1.9/3 | N 254 ± 10, C 0.288, χ² 1.6/3 |
 
-The nominal-BES points agree with Ruben's `hodo_corr_larger_bes` column to four digits,
-so the residual difference of slide 25 is in how that slide's fit was made, not in the
-points. On the August reco of this Mac the same chain gives points that differ by up to
+With the nominal BES subtracted the error bar carries no BES systematic (the difference
+between the two BES is not an uncertainty there): that is what reproduces slide 25.
+The nominal-BES points agree with Ruben's `hodo_corr_larger_bes` column to four digits.
+
+The per-run fits behind the points that differ (runs 20481, 20702, 21094, 21098) have
+the same sigma but a different error: on those runs HESSE fails in iminuit and the flat
+script takes the errors of the refit with the tails frozen, while HESSE converges in
+ROOT. The weights 1/err² then move the weighted mean by 0.003–0.005 %. On the August reco of this Mac the same chain gives points that differ by up to
 0.02 % (different event counts per run, runs 20427–20429 and 20690 present).
 
 `bes_from_collimators.py` rebuilds Ruben's table from the collimator log at every
