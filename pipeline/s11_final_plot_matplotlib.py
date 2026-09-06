@@ -24,7 +24,7 @@ TERM_STYLE = {"bes": ("BES", "D-.", "C1"), "sync": ("synchrotron", "^-", "C4"), 
               "stat": ("stat", "o:", "k"), "vtx_syst": ("vtx syst", "s--", "C5"), "bes_syst": ("BES syst", "s--", "C6"),
               "syn_syst": ("sync syst", "x--", "C7"), "unif_syst": ("map syst", "P--", "C2")}
 FIT_STYLE = {("indep", "S"): ("fit, S from 340 $\\Omega$", "--", "darkviolet"),
-             ("indep", "SN"): ("fit, S and N from 340 $\\Omega$", ":", "green"),
+             ("indep", "SC"): ("fit, S and C from 340 $\\Omega$", ":", "green"),
              ("indep", ""): ("fit $N/E \\oplus S/\\sqrt{E} \\oplus C$", "--", "darkviolet"),
              ("common", ""): ("fit, S and C common", ":", "green")}
 

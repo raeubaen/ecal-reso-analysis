@@ -8,8 +8,8 @@ following the recipe of the selection:
   codiceA (hodoscope, resolution_hodo.py)
       N, S, C >= 0 per resistance, seeds N = 0.3 GeV, S = 3 %, C = 0.3 %. 340 ohm is
       fitted first; for the other resistances two fits are done, one with S held at the
-      340 ohm value (fixed_from_340 = S, the flat script) and one with S and N both held
-      at the 340 ohm values (fixed_from_340 = SN), C free in both. (The boxes of the slides of 10 September 2026 print "C (FIXED)" for 400
+      340 ohm value (fixed_from_340 = S, the flat script, C free) and one with S and C
+      both held at the 340 ohm values (fixed_from_340 = SC, only N free). (The boxes of the slides of 10 September 2026 print "C (FIXED)" for 400
       and 500 ohm, but that label is applied to both lines whenever R != 340 in the flat
       script: C was free, as its different values show.) Two variants when
       --nofit-energies was given to stage 9: with every point, and with those energies
@@ -37,7 +37,7 @@ import common
 COLUMNS = ("selection", "recipe", "variant", "mode", "fixed_from_340", "resistance", "n_points",
            "N_MeV", "err_N_MeV", "N_fixed", "S_pct", "err_S", "S_fixed", "C_pct", "err_C", "C_fixed",
            "chi2", "ndf")
-FIXED_SETS = {"codiceA": ("S", "SN"), "uniforme": ("",)}
+FIXED_SETS = {"codiceA": ("S", "SC"), "uniforme": ("",)}
 RESISTANCES = (340, 400, 500)
 X_OFFSET = 10000.       # resistance index encoded in the abscissa of the combined graph
 C_FIXED_UNIFORME = 0.3  # C at 500 ohm in resolution_final_uniforme.py (held at its seed)

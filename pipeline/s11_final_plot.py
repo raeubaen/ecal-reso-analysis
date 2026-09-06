@@ -6,7 +6,7 @@ One column per resistance. On top: sigma/mu as measured, sigma/E after the
 subtractions with its total error, the points with a hand-set hodoscope window or a
 pooled fit marked, and the N/S/C fit curves of stage 10 with their parameter boxes
 (for the codiceA recipe the fit with S held at the 340 ohm value and the one with S and
-N both held; for the uniforme recipe the per-resistance fit and the common one). Below,
+C both held; for the uniforme recipe the per-resistance fit and the common one). Below,
 on a log scale, the size of every term that entered. Nothing is fitted here: the curves
 are drawn from 10_resolution_fits.csv.
 
@@ -32,7 +32,7 @@ RESISTANCES = (340, 400, 500)
 TERMS_FLOOR = 3e-4          # the terms axis does not go below this (the sync syst does)
 # one line style per fit variant: (legend label, line style, colour)
 FIT_STYLE = {("indep", "S"): ("fit, S from 340 #Omega", 2, ROOT.kViolet),
-             ("indep", "SN"): ("fit, S and N from 340 #Omega", 3, ROOT.kGreen + 2),
+             ("indep", "SC"): ("fit, S and C from 340 #Omega", 3, ROOT.kGreen + 2),
              ("indep", ""): ("fit N/E #oplus S/#sqrt{E} #oplus C", 2, ROOT.kViolet),
              ("common", ""): ("fit, S and C common", 3, ROOT.kGreen + 2)}
 
