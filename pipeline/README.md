@@ -11,9 +11,9 @@ what they computed. It reproduces the two drivers as they are after merge #2:
 Every fit and every plot is done with ROOT through PyROOT: the double Crystal Ball,
 the parabolas, the response surfaces (TMatrixD), the N/S/C fits and the canvases.
 Minuit2 with an explicit HESSE after MIGRAD and iminuit's initial step sizes, so the
-fits reproduce the iminuit ones of the flat scripts (checked run by run: same peak,
-sigma, errors and chi2 to four digits, including a low-statistics run that has two
-local minima). numpy only selects events and computes plain statistics.
+fits reproduce the iminuit ones of the flat scripts (same peak, sigma, errors and
+chi2 to four digits on the same input, including a low-statistics run with two local
+minima; see the validation section). numpy only selects events and computes plain statistics.
 
 ```bash
 PYTHON=/opt/homebrew/bin/python3 bash pipeline/run_pipeline.sh <dir with reco_*ohm/> [out] [bes dir]
@@ -92,6 +92,22 @@ chi2/ndf = 1 against a constant, added to the error bar (merge #2).
   per-run DCB panels, peak/sigma against the run.
 * A point whose parabola scan fails and has no hand-set vertex made resolution_hodo.py
   crash; here it is skipped and the reason is written to `01_windows.csv`.
+
+## Validation against the flat scripts (all three resistances, post merge #2)
+
+* Hodoscope pass against `resolution_hodo.py --window parabola`: sigma/mu, stat, drift,
+  vertex systematic, total error, number of events, number of runs and the window label
+  agree to four digits at all 28 points (largest difference 0.0007 % on sigma/mu at
+  400 Ω 100 GeV, one run whose free-tails fit converges slightly differently).
+* Centroid pass against `uniformita_maps.py` (moments, apply, collect): raw, run,
+  energy and mean corrected sigma/mu agree within 0.001 % at all points but three.
+  There the double Crystal Ball with free tails has two local minima (n_l, n_h at their
+  limit of 10 or not): 340 Ω 30 GeV raw (1.1641 flat, 1.1588 here), 400 Ω 250 GeV
+  (0.4525 / 0.4508), 500 Ω 60 GeV energy surface (0.7184 / 0.7097, where the flat fit
+  has the worse chi2/ndf, 1.65 against 1.52). On identical input arrays the two fitters
+  return the same minimum.
+* The per-run-normalised profiles (`03_profiles.csv`) reproduce `profili_pernorm.csv`
+  to six digits.
 
 ## Naming
 
