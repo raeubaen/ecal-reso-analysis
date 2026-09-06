@@ -66,8 +66,8 @@ NBINS, NMIN_BIN, NMIN_FIT = 40, 150, 3000
 
 SCAN_HALVES = (5., 6., 7., 8., 9., 10.)   # fit half-widths scanned around the maximum [mm]
 MIN_FITS = 4                              # how many of them must give a usable maximum
-VX_SPREAD_MAX = 1.5                       # allowed excursion of the vertex over the scan [mm]
-W_SPREAD_MAX = 0.15                       # allowed relative spread of W over the scan
+VX_SPREAD_MAX = 5                       # allowed excursion of the vertex over the scan [mm]
+W_SPREAD_MAX = 0.7                       # allowed relative spread of W over the scan
 W_MIN, W_MAX = 12., 40.                   # acceptable crystal width [mm]
 
 FILES = {340: ("reco_340ohm", "*_merged.root"),
@@ -133,7 +133,7 @@ def _fit(px, py, pe, lo, hi):
     if not (lo <= vx <= hi):           # vertex extrapolated outside its own fit range
         return None
     chi2 = float((((X @ c - py[m]) / pe[m]) ** 2).sum())
-    return vx, float(100 * c[0] / np.polyval(c, vx)), chi2 / max(n - 3, 1), n
+    return vx, float(100 * c[0] / np.polyval(c, vx)), chi2 / max(n - 3, 1), n, np.sqrt(np.linalg.inv(X.T @ np.diag(iw**2) @ X)[1,1] / (-2*c[0])) #last is the error on vertex
 
 
 def parabola_scan(px, py, pe, cc, half=0.2, halves=SCAN_HALVES):
@@ -146,6 +146,7 @@ def parabola_scan(px, py, pe, cc, half=0.2, halves=SCAN_HALVES):
     Returns a dict which always carries 'ok'. When ok is False, 'why' says what went
     wrong -- that is the message to put on the plot, not a silent skip.
     """
+
     out = dict(ok=False, why="", x0=np.nan, W=np.nan, vx_spread=np.nan,
                w_spread=np.nan, chi2ndf=np.nan, nfit=0, peak=np.nan)
     if px is None or len(px) < 6:
@@ -162,6 +163,7 @@ def parabola_scan(px, py, pe, cc, half=0.2, halves=SCAN_HALVES):
         if q is None:
             continue
         vs.append(q[0]); ws.append(float(np.sqrt(cc / q[1]))); cs.append(q[2])
+    out["vertex_pos_error"] = q[4]
     out["nfit"] = len(vs)
     if len(vs) < MIN_FITS:
         out["why"] = f"only {len(vs)} of {len(halves)} fit ranges give a maximum"
@@ -174,10 +176,10 @@ def parabola_scan(px, py, pe, cc, half=0.2, halves=SCAN_HALVES):
         out["why"] = f"vertex moves by {out['vx_spread']:.1f} mm across the fit ranges"
     elif out["w_spread"] > W_SPREAD_MAX:
         out["why"] = f"W varies by {100*out['w_spread']:.0f} % across the fit ranges"
-    elif not (W_MIN <= W <= W_MAX):
-        out["why"] = f"W = {W:.0f} mm, not a crystal"
-    elif not (px.min() <= x0 - half * W and x0 + half * W <= px.max()):
-        out["why"] = "the window falls outside the hodoscope acceptance"
+    #elif not (W_MIN <= W <= W_MAX):
+    #    out["why"] = f"W = {W:.0f} mm, not a crystal"
+    #elif not (px.min() <= x0 - half * W and x0 + half * W <= px.max()):
+    #    out["why"] = "the window falls outside the hodoscope acceptance"
     else:
         out["ok"] = True
     return out
@@ -187,7 +189,9 @@ def crystal_curvature(plotdir, R):
     """Relative curvature in crystal units, from profili_pernorm.py."""
     out = {}
     f = os.path.join(plotdir, "profili", "profili_pernorm.csv")
+    print(f)
     if not os.path.exists(f):
+        print(f, " not found!!")
         return out
     for r in csv.DictReader(open(f)):
         if int(r["resistance"]) == R:

@@ -158,6 +158,7 @@ def fit_dcb(v, energy, resistance, w=None, fix=None):
     smaller error is the true one. It is not free: sigma itself moves by up to 1 %, so
     it is a change of fit model and is carried as a systematic, not adopted silently."""
     win = fit_window(v, energy, resistance)
+
     if not _win_ok(win, v):
         win = mode_window(v, energy, resistance)
     if not _win_ok(win, v):

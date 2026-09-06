@@ -1,5 +1,10 @@
 # Energy resolution analysis — ECAL test beam H4, 2026
 
+From Ruben: Using only ```run_all_hodoscopes.sh```
+Many files could be deleted...
+
+
+
 Scripts to measure the energy resolution `σ/E = N/E ⊕ S/√E ⊕ C` of an ECAL module
 exposed to an electron beam in the H4 line at the SPS, with particular attention to
 the **non-uniformity of the response across the impact point**.

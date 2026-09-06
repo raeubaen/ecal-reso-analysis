@@ -941,25 +941,15 @@ def summary_plot(per_energy, syst, resistance, outdir):
     axs[0].set_ylabel("run-to-run peak spread\n(max-min)/peak  [%]")
     axs[0].grid(alpha=.3)
     axs[0].set_title(f"{resistance} $\\Omega$\n{CUT_LABEL}", fontsize=11)
-    sy_e = [e for e in es_all if e in syst and np.isfinite(syst[e]["syst_peak_pct"])]
+    sy_e = [e for e in es_all if e in syst and np.isfinite(syst[e]["syst_reso_pct"])]
     if sy_e:
-        axs[1].plot(sy_e, [syst[e]["syst_peak_pct"] for e in sy_e], "D-", color="C4",
-                    label="systematic on peak")
-        axs[1].plot(sy_e, [syst[e]["syst_sigma_pct"] for e in sy_e], "v--", color="C1",
-                    label="systematic on $\\sigma$")
+        axs[1].plot(sy_e, [syst[e]["syst_reso_pct"] for e in sy_e], "D-", color="C4",
+                    label="systematic on resolution (sigma_E/E)")
         axs[1].legend(fontsize=8)
     axs[1].set_ylabel("drift systematic\n(error to add for $\\chi^2$/ndf=1) [%]")
     axs[1].grid(alpha=.3)
 
     axs[2].plot(es_all, relsig, "s-", color="C2", label="$\\sigma/\\mu$ global fit")
-    if sy_e:
-        corr = [100 * np.sqrt(syst[e]["sigma_w"] ** 2 - syst[e]["syst_peak"] ** 2)
-                / syst[e]["peak_w"]
-                if syst[e]["syst_peak"] < syst[e]["sigma_w"] else np.nan
-                for e in sy_e]
-        axs[2].plot(sy_e, corr, "^--", color="C3",
-                    label="$\\sqrt{\\sigma^2 - s_{peak}^2}$ / $\\mu$ (drift subtracted;\n"
-                          "point missing if syst exceeds $\\sigma$)")
     axs[2].legend(fontsize=8)
     axs[2].set_ylabel("$\\sigma/\\mu$ [%]")
     axs[2].set_xlabel("Beam energy [GeV]")
@@ -1071,30 +1061,23 @@ def main():
             rows, ref = per_energy[e]
             good = [r for r in rows if r["ok"]]
             if ref is None or len(good) < 2:
+                print("not saved")
                 continue
             pk = np.array([r["peak"] for r in good])
             epk = np.array([r["err_peak"] for r in good])
             sg = np.array([r["sigma"] for r in good])
             esg = np.array([r["err_sigma"] for r in good])
-            sp, c0p, mp = syst_for_unit_chi2(pk, epk)
-            ss, c0s, ms = syst_for_unit_chi2(sg, esg)
-            syst[e] = dict(n=len(good), peak_w=mp, syst_peak=sp, chi2_peak=c0p,
-                           syst_peak_pct=100 * sp / mp if mp else np.nan,
-                           sigma_w=ms, syst_sigma=ss, chi2_sigma=c0s,
-                           syst_sigma_pct=100 * ss / ms if ms else np.nan)
+            ss, c0s, ms = syst_for_unit_chi2(sg/pk, sg/pk * ((epk/pk)**2 + (esg/sg)**2)**0.5 )
+            syst[e] = dict(n=len(good), reso_w=ms, syst_reso=ss, chi2_reso=c0s,
+                           syst_reso_pct=ss*100)
         with open(os.path.join(out, f"sistematica_drift_{R}ohm.csv"), "w") as fh:
-            fh.write("energy,n_run,peak_medio,chi2_ndf_picco_senza_syst,syst_picco_ADC,"
-                     "syst_picco_pct,sigma_media,chi2_ndf_sigma_senza_syst,syst_sigma_ADC,"
-                     "syst_sigma_pct,sigma_globale_ADC,sigma_meno_drift_ADC\n")
+            fh.write("energy,n_run,reso_medio,chi2_ndf_resp_senza_syst,syst_reso,"
+                     "syst_reso_pct,reso_globale\n")
             for e in sorted(syst):
                 d = syst[e]
-                sg_glob = per_energy[e][1]["sigma"]
-                sg_corr = (np.sqrt(sg_glob ** 2 - d["syst_peak"] ** 2)
-                           if d["syst_peak"] < sg_glob else float("nan"))
-                fh.write(f"{e},{d['n']},{d['peak_w']:.4f},{d['chi2_peak']:.4f},"
-                         f"{d['syst_peak']:.4f},{d['syst_peak_pct']:.4f},{d['sigma_w']:.4f},"
-                         f"{d['chi2_sigma']:.4f},{d['syst_sigma']:.4f},"
-                         f"{d['syst_sigma_pct']:.4f},{sg_glob:.4f},{sg_corr:.4f}\n")
+                sg_glob = per_energy[e][1]["sigma"]/per_energy[e][1]["peak"]
+                fh.write(f"{e},{d['n']},{d['reso_w']:.4f},{d['chi2_reso']:.4f},"
+                         f"{d['syst_reso']:.4f},{d['syst_reso_pct']:.4f},{sg_glob:.4f}\n")
         with open(os.path.join(out, f"parabola_centroide_{R}ohm.csv"), "w") as fh:
             fh.write("energy,coord,n_bin,p0_vertice,err_p0,p1_massimo,err_p1,"
                      "p2_curvatura,err_p2,chi2,ndf\n")

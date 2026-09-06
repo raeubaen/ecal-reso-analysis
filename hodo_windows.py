@@ -127,9 +127,7 @@ def main():
                 elif win:
                     head = f"{E} GeV   [{win[0]:+.1f}, {win[1]:+.1f}] mm"
                     if a.window == "parabola":
-                        sub = (f"$x_0$ {sc['x0']:+.2f} mm,  W {sc['W']:.1f} mm,  "
-                               f"spread {sc['vx_spread']:.2f} mm / "
-                               f"{100*sc['w_spread']:.0f} %")
+                        sub = (f"$x_0$ {sc['x0']:+.2f} mm")
                 else:
                     head, col = f"{E} GeV   no window", "C3"
                 panels[tag].append(dict(E=E, px=px, py=py, pe=pe, top=py.max(), sc=sc,

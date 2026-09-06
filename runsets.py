@@ -30,7 +30,7 @@ Usage in a script:
 
 FILTER_50MHZ = tuple(range(20552, 20600)) + tuple(range(20486,20501))
 HIGH_275 = tuple(range(20652, 20660))
-OUTLIERS = (20491,)
+OUTLIERS = (20491,20788,21116)
 
 
 def resolve(runset, extra_exclude=()):
