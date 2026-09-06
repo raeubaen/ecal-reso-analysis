@@ -276,10 +276,11 @@ def centroid_maps(events, base_box, fits, pooled, resistance, energy, outdir):
     pad = canvas.cd(3)
     runs = sorted(fits)
     x_index = np.arange(len(runs), dtype=float)
-    eta_mean = np.array([events["pos_eta"][above & (run == r)].mean() if (above & (run == r)).any() else np.nan for r in runs])
-    phi_mean = np.array([events["pos_phi"][above & (run == r)].mean() if (above & (run == r)).any() else np.nan for r in runs])
-    eta_err = np.array([events["pos_eta"][above & (run == r)].std() / np.sqrt(max((above & (run == r)).sum(), 1)) for r in runs])
-    phi_err = np.array([events["pos_phi"][above & (run == r)].std() / np.sqrt(max((above & (run == r)).sum(), 1)) for r in runs])
+    per_run_masks = [above & (run == this_run) for this_run in runs]
+    eta_mean = np.array([events["pos_eta"][mask].mean() if mask.any() else np.nan for mask in per_run_masks])
+    phi_mean = np.array([events["pos_phi"][mask].mean() if mask.any() else np.nan for mask in per_run_masks])
+    eta_err = np.array([events["pos_eta"][mask].std() / np.sqrt(max(mask.sum(), 1)) for mask in per_run_masks])
+    phi_err = np.array([events["pos_phi"][mask].std() / np.sqrt(max(mask.sum(), 1)) for mask in per_run_masks])
     global_eta = events["pos_eta"][above].mean() if above.any() else 0.
     global_phi = events["pos_phi"][above].mean() if above.any() else 0.
     if len(runs):
