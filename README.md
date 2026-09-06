@@ -5,6 +5,13 @@ Many files could be deleted...
 
 
 
+## Staged pipeline (branch refactor-root)
+
+`pipeline/` holds the same analysis split into ten scripts, one job each, every fit and
+every plot done with ROOT through PyROOT. It reproduces both drivers, `run_all.sh`
+(centroid selection) and `run_all_hodoscope.sh` (hodoscope selection), as they are after
+merge #2. See `pipeline/README.md`.
+
 Scripts to measure the energy resolution `σ/E = N/E ⊕ S/√E ⊕ C` of an ECAL module
 exposed to an electron beam in the H4 line at the SPS, with particular attention to
 the **non-uniformity of the response across the impact point**.
