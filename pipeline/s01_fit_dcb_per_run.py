@@ -3,7 +3,8 @@
 Stage 1 -- double Crystal Ball fit of the amplitude, run by run, and save.
 
 One selection per pass, --selection:
-  centroid    |pos_eta - 18| <= half, |pos_phi - 6| <= half   (half = 0.2, run_all.sh)
+  centroid    |pos_eta - 18| <= half, |pos_phi - 6| <= half   (half = 0.2, run_all.sh;
+              0.182 with --recipe codiceA, the "cen" column of resolution_hodo.py)
   hodoscope   the window on the hodoscope of resolution_hodo.py: vertex of the response
               parabola +- 0.182 * 22 mm in x and in y, plus the four windows shifted by
               +- 1 mm that feed the vertex systematic (variations x_low, x_high, y_low,
@@ -56,7 +57,7 @@ WINDOW_COLUMNS = ("resistance", "energy", "energy_true", "selection", "window", 
 def fit_row(fit, resistance, energy, args, variation, run, tails_mode, n_selected):
     value, error = common.relative_width(fit)
     row = dict(resistance=resistance, energy=energy, energy_true=common.true_energy(energy),
-               selection=args.selection, recipe=common.recipe_for(args.selection),
+               selection=args.selection, recipe=args.recipe,
                amplitude=args.amplitude, variation=variation, run=run, tails_mode=tails_mode,
                n_selected=int(n_selected), n_events=fit["n_events"], n_bins=fit["n_bins"],
                peak=fit["peak"], err_peak=fit["err_peak"], sigma=fit["sigma"],
@@ -123,6 +124,11 @@ def main():
     parser.add_argument("--base", required=True, help="directory containing reco_<R>ohm/")
     parser.add_argument("--outdir", required=True)
     parser.add_argument("--selection", choices=common.SELECTIONS, default="centroid")
+    parser.add_argument("--recipe", choices=("auto", "codiceA", "uniforme"), default="auto",
+                        help="systematics recipe carried downstream; auto = the one of the "
+                             "selection (centroid -> uniforme, hodoscope -> codiceA). "
+                             "--selection centroid --recipe codiceA reproduces the centroid "
+                             "column of resolution_hodo.py")
     parser.add_argument("--amplitude", choices=("a3x3", "atot"), default="a3x3",
                         help="a3x3 = sum of the 3x3 matrix rebuilt from A (default, as "
                              "resolution_hodo.py); atot = the A_tot branch")
@@ -145,8 +151,11 @@ def main():
 
     dropped, kept_only = runsets.resolve(args.runset, args.exclude_runs)
     excluded_points = common.parse_excluded_points(args.exclude)
-    half = args.half if args.half is not None else common.HALF_WINDOW[args.selection]
-    recipe = common.recipe_for(args.selection)
+    recipe = common.recipe_for(args.selection) if args.recipe == "auto" else args.recipe
+    if args.selection == "hodoscope" and recipe != "codiceA":
+        parser.error("the hodoscope selection exists only in the codiceA recipe")
+    args.recipe = recipe
+    half = args.half if args.half is not None else common.HALF_WINDOW[recipe]
     hodoscope = args.selection == "hodoscope"
     if hodoscope and not args.curvature_csv:
         parser.error("--selection hodoscope needs --curvature-csv")

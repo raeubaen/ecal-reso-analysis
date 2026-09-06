@@ -168,7 +168,7 @@ def normalised_profiles(events, base, fits, resistance, energy, outdir):
         pad.SetLeftMargin(0.12)
         pad.SetBottomMargin(0.12)
         coordinate, other_coordinate = events[own], events[other]
-        in_profile = in_window & (np.abs(other_coordinate) <= common.HALF_WINDOW["centroid"])
+        in_profile = in_window & (np.abs(other_coordinate) <= common.HALF_WINDOW["uniforme"])
         centres, means, errors, n_events = binned_profile(coordinate[in_profile], normalised[in_profile])
         fit = quadratic_fit(centres, means, errors)
         raw_fit = quadratic_fit(*binned_profile(coordinate[in_profile], amplitude[in_profile])[:3])
@@ -202,7 +202,7 @@ def normalised_profiles(events, base, fits, resistance, energy, outdir):
             points.SetMarkerSize(0.6)
             points.Draw("P")
             legend.AddEntry(points, "all runs", "p")
-        for edge in (-common.HALF_WINDOW["centroid"], common.HALF_WINDOW["centroid"]):
+        for edge in (-common.HALF_WINDOW["uniforme"], common.HALF_WINDOW["uniforme"]):
             line = common.keep(ROOT.TLine(edge, frame.GetYaxis().GetXmin(), edge, frame.GetYaxis().GetXmax()))
             line.Draw()
         legend.Draw()
@@ -308,7 +308,7 @@ def centroid_maps(events, base_box, fits, pooled, resistance, energy, outdir):
     for pad_index, (name, own, other, label, other_cut) in enumerate(COORDINATES):
         pad = canvas.cd(4 + pad_index)
         pad.SetLeftMargin(0.13)
-        in_profile = (above & (np.abs(events[other]) < common.HALF_WINDOW["centroid"])
+        in_profile = (above & (np.abs(events[other]) < common.HALF_WINDOW["uniforme"])
                       & (amplitude > response_window[0]) & (amplitude < response_window[1]))
         centres, means, errors, _n = binned_profile(events[own][in_profile], amplitude[in_profile])
         if len(centres) < 4:
@@ -322,7 +322,7 @@ def centroid_maps(events, base_box, fits, pooled, resistance, energy, outdir):
         points.GetXaxis().SetLimits(-PROFILE_HALF, PROFILE_HALF)
         padding = 0.12 * (means.max() - means.min()) + 2 * np.median(errors)
         points.GetYaxis().SetRangeUser(means.min() - padding, means.max() + padding)
-        for edge in (-common.HALF_WINDOW["centroid"], common.HALF_WINDOW["centroid"]):
+        for edge in (-common.HALF_WINDOW["uniforme"], common.HALF_WINDOW["uniforme"]):
             common.keep(ROOT.TLine(edge, means.min() - padding, edge, means.max() + padding)).Draw()
         inside = np.abs(centres) <= FIT_HALF
         if inside.sum() >= 5:

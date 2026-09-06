@@ -9,6 +9,16 @@
 #
 # The hodoscope pass needs the curvature in crystal units of the per-run-normalised
 # profiles, which is stage 3 of the centroid pass: the centroid pass runs first.
+#
+# Three sets of resolution points come out, the three of the slides of 10 September 2026:
+#   hodoscope/10_resolution_fit.png              hodoscope cut, conservative BES subtracted
+#   hodoscope/10_resolution_fit_nominal_bes.png  hodoscope cut, nominal BES subtracted
+#   centroid_codiceA/10_resolution_fit.png       centroid cut of 0.182 crystals, same recipe
+# plus centroid/ with the run_all.sh recipe (position correction, map systematic).
+#
+# The BES table of the codiceA recipe (colls_energies_summary_<R>ohm.csv) is rebuilt in
+# $BES from the collimator log when COLLIMATORS points to the xlsx export and the file
+# is not already there.
 
 set -euo pipefail
 
@@ -16,6 +26,7 @@ BASE=${1:?directory with reco_<R>ohm/}
 OUT=${2:-plot/pipeline_out}
 BES=${3:-plot/bes}
 PY=${PYTHON:-python3}
+COLLIMATORS=${COLLIMATORS:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 RESISTANCES="340 400 500"
 
@@ -38,6 +49,12 @@ $PY "$HERE/s08_systematics.py"       --workdir "$CEN" --besdir "$BES"
 $PY "$HERE/s09_resolution_plots.py"  --workdir "$CEN"
 $PY "$HERE/s10_fit_resolution.py"    --workdir "$CEN"
 
+# ---------------------------------------------------------------- BES table of the codiceA recipe
+if [ -n "$COLLIMATORS" ] && [ ! -f "$BES/colls_energies_summary_340ohm.csv" ]; then
+  $PY "$HERE/bes_from_collimators.py" --collimators "$COLLIMATORS" \
+      --timestamps "$HERE/../timestamps_runs.txt" --runs-csv "$CEN/01_dcb_per_run.csv" --outdir "$BES"
+fi
+
 # ---------------------------------------------------------------- hodoscope (run_all_hodoscope.sh)
 HODO=$OUT/hodoscope
 mkdir -p "$HODO"
@@ -45,7 +62,19 @@ $PY "$HERE/s01_fit_dcb_per_run.py"   --base "$BASE" --outdir "$HODO" --selection
     --resistances $RESISTANCES --curvature-csv "$CEN/03_profiles.csv"
 $PY "$HERE/s02_combine_runs.py"      --workdir "$HODO"
 $PY "$HERE/s08_systematics.py"       --workdir "$HODO" --besdir "$BES"
-$PY "$HERE/s09_resolution_plots.py"  --workdir "$HODO"
-$PY "$HERE/s10_fit_resolution.py"    --workdir "$HODO"
+for BESKIND in cons nominal; do
+  $PY "$HERE/s09_resolution_plots.py"  --workdir "$HODO" --bes $BESKIND
+  $PY "$HERE/s10_fit_resolution.py"    --workdir "$HODO" --bes $BESKIND
+done
 
-echo "done: $CEN and $HODO"
+# ------------------------------------------------ centroid, codice A recipe (its "cen" column)
+CENA=$OUT/centroid_codiceA
+mkdir -p "$CENA"
+$PY "$HERE/s01_fit_dcb_per_run.py"   --base "$BASE" --outdir "$CENA" --selection centroid --recipe codiceA \
+    --resistances $RESISTANCES
+$PY "$HERE/s02_combine_runs.py"      --workdir "$CENA"
+$PY "$HERE/s08_systematics.py"       --workdir "$CENA" --besdir "$BES"
+$PY "$HERE/s09_resolution_plots.py"  --workdir "$CENA"
+$PY "$HERE/s10_fit_resolution.py"    --workdir "$CENA"
+
+echo "done: $CEN, $HODO and $CENA"

@@ -9,7 +9,8 @@ Two recipes, the two of the repository after merge #2; the selection decides whi
       BES from colls_energies_summary_<R>ohm.csv: BES_cons is subtracted, BES_formula
       gives the "larger BES" variation
       sigma_corr      = sqrt(sigma^2 - BES_cons^2 - sync^2)
-      bes_syst        = |sqrt(sigma^2 - BES_formula^2 - sync^2) - sigma_corr|
+      sigma_corr_nominal_bes = sqrt(sigma^2 - BES_formula^2 - sync^2)   (the "nominal BES" case)
+      bes_syst        = |sigma_corr_nominal_bes - sigma_corr|
       syn_syst        = |sqrt(sigma^2 - BES_cons^2 - (1.3 sync)^2) - sigma_corr|
       err_total       = drift (+) stat (+) vtx_syst (+) bes_syst (+) syn_syst
   uniforme (centroid, resolution_final_uniforme.py --central raw --syst map)
@@ -37,7 +38,7 @@ import common
 COLUMNS = ("resistance", "energy", "energy_true", "selection", "recipe", "window", "n_events", "n_run",
            "pooled", "sigma_raw", "stat", "drift", "chi2_drift", "syst_tails", "vtx_syst", "bes", "bes_nom",
            "sync", "bes_syst", "syn_syst", "unif_syst", "pos_eff", "pos_naive", "s_run", "s_energy",
-           "s_mean", "err_total", "sigma_corr",
+           "s_mean", "err_total", "sigma_corr", "sigma_corr_nominal_bes",
            "stat_frac", "drift_frac", "tails_frac", "vtx_frac", "bes_frac", "sync_frac", "unif_frac")
 
 
@@ -80,13 +81,15 @@ def codice_a_row(point, bes_table):
     bes_cons, bes_formula = bes_table.get(point["energy"], (0., 0.))
     sync = common.synchrotron_pct(point["energy_true"])
     sigma_corr = subtract(sigma, bes_cons, sync)
-    bes_syst = abs(subtract(sigma, bes_formula, sync) - sigma_corr)
+    sigma_corr_nominal = subtract(sigma, bes_formula, sync)
+    bes_syst = abs(sigma_corr_nominal - sigma_corr)
     syn_syst = abs(subtract(sigma, bes_cons, 1.3 * sync) - sigma_corr)
     err_total = math.sqrt(point["drift"] ** 2 + point["stat"] ** 2 + point["vtx_syst"] ** 2
                           + bes_syst ** 2 + syn_syst ** 2)
     return dict(bes=bes_cons, bes_nom=bes_formula, sync=sync, bes_syst=bes_syst, syn_syst=syn_syst,
                 unif_syst=np.nan, pos_eff=np.nan, pos_naive=np.nan, s_run=np.nan, s_energy=np.nan,
-                s_mean=np.nan, err_total=err_total, sigma_corr=sigma_corr if sigma_corr > 0 else np.nan)
+                s_mean=np.nan, err_total=err_total, sigma_corr=sigma_corr if sigma_corr > 0 else np.nan,
+                sigma_corr_nominal_bes=sigma_corr_nominal if sigma_corr_nominal > 0 else np.nan)
 
 
 def uniforme_row(point, bes_table, uniformity):
@@ -108,7 +111,8 @@ def uniforme_row(point, bes_table, uniformity):
                 pos_naive=uniformity.get("pos_term", np.nan) if uniformity else np.nan,
                 s_run=uniformity.get("s_run", np.nan) if uniformity else np.nan, s_energy=s_energy,
                 s_mean=uniformity.get("s_mean", np.nan) if uniformity else np.nan,
-                err_total=err_total, sigma_corr=sigma_corr if sigma_corr > 0 else np.nan)
+                err_total=err_total, sigma_corr=sigma_corr if sigma_corr > 0 else np.nan,
+                sigma_corr_nominal_bes=np.nan)
 
 
 def main():

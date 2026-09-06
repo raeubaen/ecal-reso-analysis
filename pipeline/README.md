@@ -1,12 +1,14 @@
 # The staged pipeline
 
 The analysis of the repository, split into ten scripts that do one job each and save
-what they computed. It reproduces the two drivers as they are after merge #2:
+what they computed. It reproduces the two drivers as they are after merge #2, and the
+three sets of resolution points of the ECAL Days slides of 10 September 2026:
 
-| pass | driver reproduced | selection | recipe of the systematics |
+| pass | driver / slide | selection | recipe of the systematics |
 |---|---|---|---|
 | `centroid`  | `run_all.sh` (drift_dcb_all → uniformita_pos / uniformita_maps → resolution_final_uniforme) | `\|pos_eta − 18\| ≤ 0.2`, `\|pos_phi − 6\| ≤ 0.2` | `uniforme` |
-| `hodoscope` | `run_all_hodoscope.sh` (resolution_hodo.py, "codice A") | vertex of the response parabola ± 0.182 · 22 mm on the hodoscope | `codiceA` |
+| `hodoscope` | `run_all_hodoscope.sh` (resolution_hodo.py, "codice A"); slide 24 with the conservative BES, slide 25 with the nominal BES (`--bes nominal` in stages 9 and 10) | vertex of the response parabola ± 0.182 · 22 mm on the hodoscope | `codiceA` |
+| `centroid_codiceA` | the "cen" column of resolution_hodo.py; slide 26 | `\|pos_eta − 18\| ≤ 0.182`, `\|pos_phi − 6\| ≤ 0.182` | `codiceA` (`--selection centroid --recipe codiceA`) |
 
 Every fit and every plot is done with ROOT through PyROOT: the double Crystal Ball,
 the parabolas, the response surfaces (TMatrixD), the N/S/C fits and the canvases.
@@ -22,6 +24,19 @@ PYTHON=/opt/homebrew/bin/python3 bash pipeline/run_pipeline.sh <dir with reco_*o
 The interpreter must have PyROOT (ROOT 6.40 built against python 3.14 here). uproot,
 awkward, iminuit and matplotlib are not needed. The centroid pass runs first: the
 hodoscope window needs the curvature in crystal units of stage 3.
+
+The codiceA recipe reads the BES from `colls_energies_summary_<R>ohm.csv`, a table
+that is not in the repository. `bes_from_collimators.py` rebuilds it from the xlsx export
+of the collimator jaws (`CMS_ECAL_Collimators_June26.xlsx`), the run time stamps
+(`timestamps_runs.txt`, CERN local time) and the run list of stage 1: C3 = XCHV.022.131
+and C8 = XCSV.022.386, `BES_formula = sqrt(C3² + C8²)/(27√3)`, `BES_cons = C3/(27√3)`
+(slides 11–12). The driver runs it when `COLLIMATORS=<xlsx>` is set and the table is
+missing; `colls_per_run.csv` lists the jaws run by run and flags the runs that sit
+across a change.
+
+`runsets.py` carries the "excellent run" selection of the slides: on top of 20491, 20788
+and 21116 it drops 21033–21037 (every 50 GeV run at 500 Ω) and 21119 (the only 80 GeV run
+at 500 Ω), so 500 Ω has five points as in the slides.
 
 ## The stages
 
@@ -75,7 +90,9 @@ chi2/ndf = 1 against a constant, added to the error bar (merge #2).
 * `syst_tails`, the difference between free and fixed tails, is computed and written
   (resolution_hodo.py computes it and drops it) but enters no error bar.
 * The ndf written for the codiceA fits is n − 3 (n − 2 at 500 Ω), as in the flat script,
-  whatever is held fixed.
+  whatever is held fixed. For 400 and 500 Ω only S is held at the 340 Ω value: the "C
+  (FIXED)" of the slide boxes is a label the flat script prints for every R ≠ 340, and
+  the different C values in those boxes show C was free.
 
 ## Things the flat code does that are NOT reproduced
 

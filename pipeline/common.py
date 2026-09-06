@@ -54,9 +54,9 @@ CRYSTAL_WINDOW = 3               # the 3x3 matrix around (18, 6) summed for the 
 
 SELECTIONS = ("centroid", "hodoscope")
 RECIPE = {"centroid": "uniforme", "hodoscope": "codiceA"}
-# half-window of the position cut in crystal units: 0.2 in the uniformity chain,
-# 0.182 in resolution_hodo.py (its SEL constant)
-HALF_WINDOW = {"centroid": 0.2, "hodoscope": 0.182}
+# half-window of the position cut in crystal units, by recipe: 0.2 in the uniformity
+# chain, 0.182 in resolution_hodo.py (its SEL constant, used for both its cuts)
+HALF_WINDOW = {"uniforme": 0.2, "codiceA": 0.182}
 # runs with fewer events than this are not fitted individually
 MIN_EVENTS_PER_RUN = {"codiceA": 300, "uniforme": 0}
 MIN_EVENTS_POOLED = 500

@@ -8,8 +8,11 @@ following the recipe of the selection:
   codiceA (hodoscope, resolution_hodo.py)
       N, S, C >= 0 per resistance, seeds N = 0.3 GeV, S = 3 %, C = 0.3 %. 340 ohm is
       fitted first; for the other resistances S is held at the 340 ohm value and C is
-      free. Two variants when --nofit-energies was given to stage 9: with every point,
-      and with those energies drawn but left out.
+      free. (The boxes of the slides of 10 September 2026 print "C (FIXED)" for 400
+      and 500 ohm, but that label is applied to both lines whenever R != 340 in the flat
+      script: C was free, as its different values show.) Two variants when
+      --nofit-energies was given to stage 9: with every point, and with those energies
+      drawn but left out. --bes nominal reads the points of stage 9 --bes nominal.
   uniforme (centroid, resolution_final_uniforme.py)
       N, S, C >= 0 per resistance, seeds N = 0.3, S = 5 (the 340 ohm S at 500 ohm),
       C = 0.3; at 500 ohm C is held at the seed. Then the simultaneous fit with S and C
@@ -124,15 +127,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--workdir", required=True)
+    parser.add_argument("--bes", choices=("cons", "nominal"), default="cons",
+                        help="codiceA only: fit the points with the nominal BES subtracted")
     args = parser.parse_args()
     common.style()
+    suffix = "_nominal_bes" if args.bes == "nominal" else ""
 
-    rows = common.read_csv(common.require(os.path.join(args.workdir, "09_resolution_points.csv")))
+    rows = common.read_csv(common.require(os.path.join(args.workdir, f"09_resolution_points{suffix}.csv")))
     if not rows:
         raise SystemExit("09_resolution_points.csv is empty")
     selection, recipe = rows[0]["selection"], rows[0]["recipe"]
     resistances = [resistance for resistance in RESISTANCES if any(row["resistance"] == resistance for row in rows)]
-    output = ROOT.TFile(os.path.join(args.workdir, "10_resolution_fits.root"), "RECREATE")
+    output = ROOT.TFile(os.path.join(args.workdir, f"10_resolution_fits{suffix}.root"), "RECREATE")
     table = []
 
     variants = [("nominal", True)]
@@ -178,8 +184,8 @@ def main():
             fit["function"].Write(f"f_{variant}_{resistance}_indep")
         output.cd()
         canvas.Write(f"c_{variant}_indep")
-        common.save_canvas(canvas, os.path.join(args.workdir,
-                                                "10_resolution_fit" + ("_allpoints" if variant == "allpoints" else "") + ".png"))
+        common.save_canvas(canvas, os.path.join(args.workdir, "10_resolution_fit" + suffix
+                                                + ("_allpoints" if variant == "allpoints" else "") + ".png"))
 
         if recipe == "uniforme" and len(fitted) >= 2:
             rows_by_resistance = {resistance: points_of(rows, resistance, fit_only=fit_only) for resistance in fitted}
@@ -222,7 +228,7 @@ def main():
             common.save_canvas(canvas, os.path.join(args.workdir, "10_resolution_common"
                                                     + ("_allpoints" if variant == "allpoints" else "") + ".png"))
     output.Close()
-    common.write_csv(os.path.join(args.workdir, "10_resolution_fits.csv"), table, COLUMNS)
+    common.write_csv(os.path.join(args.workdir, f"10_resolution_fits{suffix}.csv"), table, COLUMNS)
 
 
 if __name__ == "__main__":

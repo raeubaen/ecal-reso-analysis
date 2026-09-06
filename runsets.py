@@ -16,6 +16,10 @@ HIGH_275
 OUTLIERS
     Single runs excluded by decision. 20491 (120 GeV) sits 1.5 % above the other run
     at the same energy in median A_tot, with no configuration difference on record.
+    The "excellent run" selection of the ECAL Days slides (10 September 2026) adds:
+    21033-21037, every 50 GeV run at 500 ohm, beam energy spread far above half the
+    resolution; 21119, the only 80 GeV run at 500 ohm, large beam halo and not centred;
+    21116 (60 GeV, 500 ohm), table position different from the other runs.
 
 Usage in a script:
 
@@ -30,7 +34,9 @@ Usage in a script:
 
 FILTER_50MHZ = tuple(range(20552, 20600)) + tuple(range(20486,20501))
 HIGH_275 = tuple(range(20652, 20660))
-OUTLIERS = (20491,20788,21116)
+OUTLIERS = (20491, 20788, 21116,
+            21033, 21034, 21035, 21036, 21037,   # 50 GeV, 500 ohm: beam energy spread
+            21119)                               # 80 GeV, 500 ohm: halo, not centred
 
 
 def resolve(runset, extra_exclude=()):

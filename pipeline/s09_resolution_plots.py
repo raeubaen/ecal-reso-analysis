@@ -11,7 +11,9 @@ hand-set hodoscope window are marked as such. No fit here: stage 10 does the fit
 
 Writes 09_resolution_points.csv (energy_true, sigma_over_E, its error, and in_fit, the
 flag stage 10 uses: 0 for the energies listed in --nofit-energies) and
-09_resolution_terms.png.
+09_resolution_terms.png. With --bes nominal (codiceA only) the central value has the
+nominal BES (BES_formula) subtracted instead of the conservative one, the error bar is
+unchanged, and the files carry the suffix _nominal_bes.
 """
 
 import argparse
@@ -51,7 +53,7 @@ def styled(graph, marker, colour, size=1.1):
     return graph
 
 
-def draw_top(pad, rows, resistance, selection):
+def draw_top(pad, rows, resistance, selection, central="sigma_corr", bes_label="BES"):
     pad.SetGrid()
     pad.SetLeftMargin(0.13)
     raw = common.keep(styled(graph_of(rows, "sigma_raw"), 20, ROOT.kGray + 2))
@@ -62,25 +64,25 @@ def draw_top(pad, rows, resistance, selection):
     legend = common.keep(ROOT.TLegend(0.45, 0.6, 0.89, 0.88))
     legend.SetTextSize(0.03)
     legend.AddEntry(raw, "#sigma/#mu", "pl")
-    corrected = graph_of(rows, "sigma_corr", "err_total", positive_only=True)
+    corrected = graph_of(rows, central, "err_total", positive_only=True)
     if corrected is not None:
         common.keep(styled(corrected, 22, ROOT.kRed + 1, 1.4)).Draw("PL")
-        legend.AddEntry(corrected, "- BES - synchrotron" if rows[0]["recipe"] == "uniforme"
-                        else "- BES - synchrotron, err with systs", "pl")
-    pooled = [row for row in rows if row["pooled"] and np.isfinite(row["sigma_corr"])]
+        legend.AddEntry(corrected, f"- {bes_label} - synchrotron" if rows[0]["recipe"] == "uniforme"
+                        else f"- {bes_label} - synchrotron, err with systs", "pl")
+    pooled = [row for row in rows if row["pooled"] and np.isfinite(row[central])]
     if pooled:
-        marker = common.keep(styled(graph_of(pooled, "sigma_corr"), 25, ROOT.kViolet, 2.4))
+        marker = common.keep(styled(graph_of(pooled, central), 25, ROOT.kViolet, 2.4))
         marker.Draw("P")
         legend.AddEntry(marker, "one pooled fit (no run has enough events)", "p")
-    hand_set = [row for row in rows if str(row["window"]).endswith("-ecal_prof") and np.isfinite(row["sigma_corr"])]
+    hand_set = [row for row in rows if str(row["window"]).endswith("-ecal_prof") and np.isfinite(row[central])]
     if hand_set:
-        marker = common.keep(styled(graph_of(hand_set, "sigma_corr"), 24, ROOT.kGray + 3, 2.4))
+        marker = common.keep(styled(graph_of(hand_set, central), 24, ROOT.kGray + 3, 2.4))
         marker.Draw("P")
         legend.AddEntry(marker, "no parabola: hand-set hodoscope window", "p")
     legend.Draw()
 
 
-def draw_terms(pad, rows, recipe):
+def draw_terms(pad, rows, recipe, bes_column="bes"):
     pad.SetGrid()
     pad.SetLogy()
     pad.SetLeftMargin(0.13)
@@ -99,7 +101,7 @@ def draw_terms(pad, rows, recipe):
     legend.AddEntry(raw, "#sigma/#mu", "pl")
     for term in TERMS_BY_RECIPE[recipe]:
         label, marker, colour = TERM_STYLE[term]
-        graph = graph_of(rows, term, positive_only=True)
+        graph = graph_of(rows, bes_column if term == "bes" else term, positive_only=True)
         if graph is None:
             continue
         common.keep(styled(graph, marker, colour)).Draw("PL")
@@ -121,6 +123,8 @@ def main():
     parser.add_argument("--workdir", required=True)
     parser.add_argument("--nofit-energies", nargs="*", type=int, default=[],
                         help="energies drawn but left out of the N/S/C fit of stage 10")
+    parser.add_argument("--bes", choices=("cons", "nominal"), default="cons",
+                        help="codiceA only: which BES is subtracted in the central value")
     args = parser.parse_args()
     common.style()
 
@@ -128,21 +132,27 @@ def main():
     if not rows:
         raise SystemExit("08_systematics.csv is empty")
     selection, recipe = rows[0]["selection"], rows[0]["recipe"]
+    if args.bes == "nominal" and recipe != "codiceA":
+        parser.error("--bes nominal exists only in the codiceA recipe")
+    central = "sigma_corr_nominal_bes" if args.bes == "nominal" else "sigma_corr"
+    bes_column = "bes_nom" if args.bes == "nominal" else "bes"
+    suffix = "_nominal_bes" if args.bes == "nominal" else ""
     points = [dict(resistance=row["resistance"], energy=row["energy"], energy_true=row["energy_true"],
                    selection=selection, recipe=recipe, window=row["window"], n_run=row["n_run"],
-                   pooled=row["pooled"], sigma_raw=row["sigma_raw"], sigma_over_E=row["sigma_corr"],
+                   pooled=row["pooled"], sigma_raw=row["sigma_raw"], sigma_over_E=row[central],
                    err=row["err_total"], in_fit=int(row["energy"] not in args.nofit_energies))
               for row in rows]
-    common.write_csv(os.path.join(args.workdir, "09_resolution_points.csv"), points, COLUMNS)
+    common.write_csv(os.path.join(args.workdir, f"09_resolution_points{suffix}.csv"), points, COLUMNS)
 
     resistances = sorted({row["resistance"] for row in rows})
     canvas = ROOT.TCanvas("resolution_terms", "", 640 * len(resistances), 1000)
     canvas.Divide(len(resistances), 2)
     for column, resistance in enumerate(resistances):
         subset = sorted([row for row in rows if row["resistance"] == resistance], key=lambda row: row["energy"])
-        draw_top(canvas.cd(column + 1), subset, resistance, selection)
-        draw_terms(canvas.cd(len(resistances) + column + 1), subset, recipe)
-    common.save_canvas(canvas, os.path.join(args.workdir, "09_resolution_terms.png"))
+        draw_top(canvas.cd(column + 1), subset, resistance, selection, central,
+                 "BES (nominal)" if args.bes == "nominal" else "BES")
+        draw_terms(canvas.cd(len(resistances) + column + 1), subset, recipe, bes_column)
+    common.save_canvas(canvas, os.path.join(args.workdir, f"09_resolution_terms{suffix}.png"))
 
 
 if __name__ == "__main__":
