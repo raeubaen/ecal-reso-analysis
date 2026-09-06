@@ -130,18 +130,30 @@ chi2/ndf = 1 against a constant, added to the error bar (merge #2).
 
 ## Against the ECAL Days slides (24, 25, 26)
 
-With Ruben's BES tables (`rgargiul.web.cern.ch/plots_ecal_mattia/bes/`) and the run
-selection above, the three passes give the point sets of the slides: 12, 9 and 5 points
-at 340, 400 and 500 Ω. The values are not identical, and the reason is the input data,
-not the code: Ruben's `hodo_parab/resolution_hodo.csv` on the same web area has, for the
-same runs, 0 to 22 % more or fewer events inside the fit window (median 1.4 %), i.e. it
-was made from a later reco of the same runs, and his merged files do not contain
-20427–20429 (340 Ω 200 GeV) and 20690 (400 Ω 250 GeV), which the shift sheet marks as
-good runs. On this machine's August reco the differences are up to 0.02 % on σ/E and
-0.03 % on its error, and the fits move accordingly (340 Ω hodoscope: N 277 ± 14,
-S 2.78 ± 0.41, C 0.299 ± 0.022 here against N 289 ± 14, S 2.40 ± 0.48, C 0.320 ± 0.022 on
-slide 24). Running the pipeline on Ruben's reco files (the EOS directory of
-`run_all.sh`) is what it takes to get the slide numbers to the digit.
+Run on Ruben's reco files (the EOS directory of `run_all.sh`, merged files of
+1 September 2026, done on lxplus with LCG_107) with his BES tables
+(`rgargiul.web.cern.ch/plots_ecal_mattia/bes/`) and the run selection above, the three
+passes give the point sets of the slides: 12, 9 and 5 points at 340, 400 and 500 Ω, the
+same runs and the same event counts as his `hodo_parab/resolution_hodo.csv` at every
+point. σ/E and its error agree to four digits at 23 of the 26 hodoscope points and at
+24 of the 26 centroid points; the others (340 Ω 250 GeV, 400 Ω 200 GeV, 500 Ω 40 GeV, and
+500 Ω 30/40 GeV for the centroid) differ by 0.003–0.005 %, one run each whose free-tails
+double Crystal Ball converges to a different local minimum. The fits:
+
+| case | R | pipeline | slide |
+|---|---|---|---|
+| hodoscope, conservative BES (slide 24) | 340 | N 288 ± 14, S 2.417 ± 0.479, C 0.319 ± 0.022, χ² 16.0/9 | N 289 ± 14, S 2.396 ± 0.484, C 0.320 ± 0.022, χ² 16.3/9 |
+| | 400 | N 265 ± 12, C 0.347, χ² 5.5/6 | N 266 ± 12, C 0.348, χ² 5.3/6 |
+| | 500 | N 253 ± 12, C 0.327, χ² 0.5/3 | N 254 ± 12, C 0.328, χ² 0.5/3 |
+| centroid 0.182 (slide 26) | 340 | N 279 ± 7, S 3.315 ± 0.206, C 0.294 ± 0.016, χ² 22.4/9 | identical |
+| | 400 | N 279 ± 4, C 0.330, χ² 29.6/6 | N 279 ± 4, C 0.338, χ² 29.6/6 |
+| | 500 | N 268 ± 16, C 0.265, χ² 6.6/3 | N 266 ± 16, C 0.266, χ² 6.8/3 |
+| hodoscope, nominal BES (slide 25) | 340 | N 287 ± 14, S 2.501 ± 0.460, C 0.310 | N 286 ± 14, S 2.574 ± 0.432, C 0.303 |
+
+The nominal-BES points agree with Ruben's `hodo_corr_larger_bes` column to four digits,
+so the residual difference of slide 25 is in how that slide's fit was made, not in the
+points. On the August reco of this Mac the same chain gives points that differ by up to
+0.02 % (different event counts per run, runs 20427–20429 and 20690 present).
 
 `bes_from_collimators.py` rebuilds Ruben's table from the collimator log at every
 point but three: 340 Ω 200 GeV (runs across a C8 change, 2 and 3 mm), 400 Ω 150 GeV
