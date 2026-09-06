@@ -52,7 +52,7 @@ at 500 Ω), so 500 Ω has five points as in the slides.
 | 8 | `s08_systematics.py` | 2, 7, BES tables | `08_systematics.csv`, every term and its fraction of sigma/mu |
 | 9 | `s09_resolution_plots.py` | 8 | `09_resolution_points.csv`, `09_resolution_terms.png` |
 | 10 | `s10_fit_resolution.py` | 9 | `10_resolution_fits.csv` (codiceA: per resistance with S held at the 340 Ω value, and with S and C both held; uniforme: per resistance and common), `10_resolution_fits.root`, `10_resolution_fit*.png` |
-| 11 | `s11_final_plot.py`, `s11_final_plot_matplotlib.py` | 8, 9, 10 | `11_resolution.png` and `11_resolution_mpl.png`: everything on one figure, the points, the fit curves with their boxes and the size of every term, legends away from the points. ROOT and matplotlib from the same CSVs; `_nominal_bes` twins with `--bes nominal` |
+| 11 | `s11_final_plot.py`, `s11_final_plot_matplotlib.py` | 8, 9, 10 | `11_resolution_<variant>.png` and `..._mpl.png`, one figure per fit variant (`S`, `SC` for codiceA; `indep`, `common` for uniforme): the points, one fit curve with its box per resistance and the size of every term, legends away from the points. ROOT and matplotlib from the same CSVs; `_nominal_bes` twins with `--bes nominal` |
 
 Stages 1, 3 and 6 read the events (RDataFrame, ~3 s per file). Everything else reads
 CSV and takes seconds. The hodoscope pass runs 1, 2, 8, 9, 10, 11: with the hodoscope

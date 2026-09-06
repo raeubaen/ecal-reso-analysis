@@ -4,7 +4,7 @@ Stage 11, matplotlib version -- the same final figure as s11_final_plot.py, draw
 matplotlib from the CSVs of stages 8, 9 and 10. No ROOT needed: it runs with any python
 that has numpy and matplotlib.
 
-Writes 11_resolution[_nominal_bes]_mpl.png.
+Writes 11_resolution[_nominal_bes]_<variant>_mpl.png, one figure per fit variant.
 """
 
 import argparse
@@ -71,12 +71,25 @@ def main():
     central_label = ("$-$ BES $-$ sync" if recipe == "uniforme"
                      else f"$-$ BES ({'nominal' if args.bes == 'nominal' else 'conservative'}) $-$ sync")
 
+    variants = []
+    for row in fits_all:
+        key = (row["mode"], str(row["fixed_from_340"]))
+        if key not in variants:
+            variants.append(key)
+    for mode, fixed_from_340 in variants:
+        draw_figure(args, suffix, fixed_from_340 or mode, mode, fixed_from_340, points_all, terms_all, fits_all,
+                    selection, recipe, resistances, bes_column, central_label)
+
+
+def draw_figure(args, suffix, name, mode, fixed_from_340, points_all, terms_all, fits_all, selection, recipe,
+                resistances, bes_column, central_label):
     figure, axes = plt.subplots(2, len(resistances), figsize=(6.6 * len(resistances), 11), sharex="col",
                                 gridspec_kw=dict(height_ratios=[2, 1.15]), squeeze=False)
     for column, resistance in enumerate(resistances):
         points = sorted([row for row in points_all if row["resistance"] == resistance], key=lambda row: row["energy"])
         terms = sorted([row for row in terms_all if row["resistance"] == resistance], key=lambda row: row["energy"])
-        fits = [row for row in fits_all if row["resistance"] == resistance]
+        fits = [row for row in fits_all if row["resistance"] == resistance
+                and (row["mode"], str(row["fixed_from_340"])) == (mode, fixed_from_340)]
         energy = np.array([row["energy_true"] for row in points], float)
         raw = np.array([row["sigma_raw"] for row in points], float)
         corrected = np.array([row["sigma_over_E"] for row in points], float)
@@ -139,7 +152,7 @@ def main():
         axis.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3, frameon=False)
     figure.suptitle(f"cut on the {selection}   $\\quad$   $A_{{tot}} > 100$ ADC", fontsize=12)
     figure.tight_layout(rect=(0, 0.02, 1, 0.98))
-    path = os.path.join(args.workdir, f"11_resolution{suffix}_mpl.png")
+    path = os.path.join(args.workdir, f"11_resolution{suffix}_{name}_mpl.png")
     figure.savefig(path, dpi=150)
     print("->", path)
 

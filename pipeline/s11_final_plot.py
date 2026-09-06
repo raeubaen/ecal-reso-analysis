@@ -5,8 +5,9 @@ Stage 11 -- the final figure, everything on one canvas (ROOT).
 One column per resistance. On top: sigma/mu as measured, sigma/E after the
 subtractions with its total error, the points with a hand-set hodoscope window or a
 pooled fit marked, and the N/S/C fit curves of stage 10 with their parameter boxes
-(for the codiceA recipe the fit with S held at the 340 ohm value and the one with S and
-C both held; for the uniforme recipe the per-resistance fit and the common one). Below,
+One figure per fit variant, one curve and one box per resistance: for the codiceA
+recipe S held at the 340 ohm value (_S) and S and C both held (_SC); for the uniforme
+recipe the per-resistance fit (_indep) and the common one (_common). Below,
 on a log scale, the size of every term that entered. Nothing is fitted here: the curves
 are drawn from 10_resolution_fits.csv.
 
@@ -14,8 +15,8 @@ The legends sit where the data are not: the top-right corner above the falling c
 and, for the terms, a strip under the axis.
 
 Reads 08_systematics.csv, 09_resolution_points[_nominal_bes].csv and
-10_resolution_fits[_nominal_bes].csv; writes 11_resolution[_nominal_bes].png (and the
-canvas in 11_resolution[_nominal_bes].root). s11_final_plot_matplotlib.py draws the same
+10_resolution_fits[_nominal_bes].csv; writes 11_resolution[_nominal_bes]_<variant>.png
+(and the canvas in the .root of the same name). s11_final_plot_matplotlib.py draws the same
 figure with matplotlib.
 """
 
@@ -82,7 +83,7 @@ def draw_top(pad, points, terms, fits, resistance, selection, central_label):
         marker.Draw("P")
         legend.AddEntry(marker, "not in the fit", "p")
     box_top = 0.6
-    for fit in fits:
+    for fit in fits:                      # one fit per figure; the loop only for the uniforme common curve
         label, style, colour = FIT_STYLE[(fit["mode"], str(fit["fixed_from_340"]))]
         curve = common.resolution_function(common.unique_name("curve"), 0.9 * min(energies), 1.05 * max(energies))
         curve.SetParameters(fit["N_MeV"] / 1000., fit["S_pct"], fit["C_pct"])
@@ -155,18 +156,26 @@ def main():
     central_label = ("- BES - synchrotron" if recipe == "uniforme"
                      else f"- BES ({'nominal' if args.bes == 'nominal' else 'conservative'}) - synchrotron")
 
-    canvas = ROOT.TCanvas("final", "", 700 * len(resistances), 1150)
-    canvas.Divide(len(resistances), 2)
-    for column, resistance in enumerate(resistances):
-        points = sorted([row for row in points_all if row["resistance"] == resistance], key=lambda row: row["energy"])
-        terms = sorted([row for row in terms_all if row["resistance"] == resistance], key=lambda row: row["energy"])
-        fits = [row for row in fits_all if row["resistance"] == resistance]
-        draw_top(canvas.cd(column + 1), points, terms, fits, resistance, selection, central_label)
-        draw_terms(canvas.cd(len(resistances) + column + 1), terms, recipe, bes_column)
-    common.save_canvas(canvas, os.path.join(args.workdir, f"11_resolution{suffix}.png"))
-    output = ROOT.TFile(os.path.join(args.workdir, f"11_resolution{suffix}.root"), "RECREATE")
-    canvas.Write("final")
-    output.Close()
+    variants = []
+    for row in fits_all:
+        key = (row["mode"], str(row["fixed_from_340"]))
+        if key not in variants:
+            variants.append(key)
+    for mode, fixed_from_340 in variants:
+        name = fixed_from_340 or mode
+        canvas = ROOT.TCanvas(f"final_{name}", "", 700 * len(resistances), 1150)
+        canvas.Divide(len(resistances), 2)
+        for column, resistance in enumerate(resistances):
+            points = sorted([row for row in points_all if row["resistance"] == resistance], key=lambda row: row["energy"])
+            terms = sorted([row for row in terms_all if row["resistance"] == resistance], key=lambda row: row["energy"])
+            fits = [row for row in fits_all if row["resistance"] == resistance
+                    and (row["mode"], str(row["fixed_from_340"])) == (mode, fixed_from_340)]
+            draw_top(canvas.cd(column + 1), points, terms, fits, resistance, selection, central_label)
+            draw_terms(canvas.cd(len(resistances) + column + 1), terms, recipe, bes_column)
+        common.save_canvas(canvas, os.path.join(args.workdir, f"11_resolution{suffix}_{name}.png"))
+        output = ROOT.TFile(os.path.join(args.workdir, f"11_resolution{suffix}_{name}.root"), "RECREATE")
+        canvas.Write("final")
+        output.Close()
 
 
 if __name__ == "__main__":
