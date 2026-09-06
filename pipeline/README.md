@@ -126,6 +126,26 @@ chi2/ndf = 1 against a constant, added to the error bar (merge #2).
 * The per-run-normalised profiles (`03_profiles.csv`) reproduce `profili_pernorm.csv`
   to six digits.
 
+## Against the ECAL Days slides (24, 25, 26)
+
+With Ruben's BES tables (`rgargiul.web.cern.ch/plots_ecal_mattia/bes/`) and the run
+selection above, the three passes give the point sets of the slides: 12, 9 and 5 points
+at 340, 400 and 500 Ω. The values are not identical, and the reason is the input data,
+not the code: Ruben's `hodo_parab/resolution_hodo.csv` on the same web area has, for the
+same runs, 0 to 22 % more or fewer events inside the fit window (median 1.4 %), i.e. it
+was made from a later reco of the same runs, and his merged files do not contain
+20427–20429 (340 Ω 200 GeV) and 20690 (400 Ω 250 GeV), which the shift sheet marks as
+good runs. On this machine's August reco the differences are up to 0.02 % on σ/E and
+0.03 % on its error, and the fits move accordingly (340 Ω hodoscope: N 277 ± 14,
+S 2.78 ± 0.41, C 0.299 ± 0.022 here against N 289 ± 14, S 2.40 ± 0.48, C 0.320 ± 0.022 on
+slide 24). Running the pipeline on Ruben's reco files (the EOS directory of
+`run_all.sh`) is what it takes to get the slide numbers to the digit.
+
+`bes_from_collimators.py` rebuilds Ruben's table from the collimator log at every
+point but three: 340 Ω 200 GeV (runs across a C8 change, 2 and 3 mm), 400 Ω 150 GeV
+(log says C3 = 20 mm, table says 8) and 500 Ω 150 GeV (20 against 10). The rebuilt
+table is kept in `plot/bes_reconstructed/` next to Ruben's in `plot/bes/`.
+
 ## Naming
 
 Variables are spelled out; nothing is a single letter.
