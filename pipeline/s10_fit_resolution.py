@@ -7,8 +7,9 @@ following the recipe of the selection:
 
   codiceA (hodoscope, resolution_hodo.py)
       N, S, C >= 0 per resistance, seeds N = 0.3 GeV, S = 3 %, C = 0.3 %. 340 ohm is
-      fitted first; for the other resistances S is held at the 340 ohm value and C is
-      free. (The boxes of the slides of 10 September 2026 print "C (FIXED)" for 400
+      fitted first; for the other resistances two fits are done, one with S held at the
+      340 ohm value (fixed_from_340 = S, the flat script) and one with S and N both held
+      at the 340 ohm values (fixed_from_340 = SN), C free in both. (The boxes of the slides of 10 September 2026 print "C (FIXED)" for 400
       and 500 ohm, but that label is applied to both lines whenever R != 340 in the flat
       script: C was free, as its different values show.) Two variants when
       --nofit-energies was given to stage 9: with every point, and with those energies
@@ -33,8 +34,10 @@ import ROOT
 
 import common
 
-COLUMNS = ("selection", "recipe", "variant", "mode", "resistance", "n_points", "N_MeV", "err_N_MeV",
-           "S_pct", "err_S", "S_fixed", "C_pct", "err_C", "C_fixed", "chi2", "ndf")
+COLUMNS = ("selection", "recipe", "variant", "mode", "fixed_from_340", "resistance", "n_points",
+           "N_MeV", "err_N_MeV", "N_fixed", "S_pct", "err_S", "S_fixed", "C_pct", "err_C", "C_fixed",
+           "chi2", "ndf")
+FIXED_SETS = {"codiceA": ("S", "SN"), "uniforme": ("",)}
 RESISTANCES = (340, 400, 500)
 X_OFFSET = 10000.       # resistance index encoded in the abscissa of the combined graph
 C_FIXED_UNIFORME = 0.3  # C at 500 ohm in resolution_final_uniforme.py (held at its seed)
@@ -47,8 +50,9 @@ def points_of(rows, resistance, fit_only=True):
     return subset
 
 
-def fit_one(rows, resistance, recipe, s_340):
-    """Per-resistance fit. Returns (function, result dict, ndf) or None."""
+def fit_one(rows, resistance, recipe, from_340, fixed_from_340):
+    """Per-resistance fit; from_340 = {parameter: value} of the 340 ohm fit, fixed_from_340
+    the letters of the parameters held at those values for 400 and 500 ohm."""
     if len(rows) < 4:
         return None
     graph = common.make_graph([row["energy_true"] for row in rows], [row["sigma_over_E"] for row in rows],
@@ -58,12 +62,13 @@ def fit_one(rows, resistance, recipe, s_340):
     fixed = []
     if recipe == "codiceA":
         function.SetParameters(0.3, 3., 0.3)
-        if resistance != 340 and s_340 is not None:
-            function.SetParameter(1, s_340)
-            fixed.append("S")
+        if resistance != 340 and from_340:
+            for name in fixed_from_340:
+                function.SetParameter({"N": 0, "S": 1, "C": 2}[name], from_340[name])
+                fixed.append(name)
         ndf = len(rows) - (2 if resistance == 500 else 3)        # as written in resolution_hodo.py
     else:
-        function.SetParameters(0.3, s_340 if (resistance == 500 and s_340 is not None) else 5., C_FIXED_UNIFORME)
+        function.SetParameters(0.3, from_340["S"] if (resistance == 500 and from_340) else 5., C_FIXED_UNIFORME)
         if resistance == 500:
             fixed.append("C")
         ndf = len(rows) - (2 if resistance == 500 else 3)
@@ -92,7 +97,7 @@ def fit_common(rows_by_resistance):
 
 
 def parameter_lines(values, errors, fixed, chi2, ndf):
-    return [f"N  {1000 * values[0]:6.0f} #pm {1000 * errors[0]:.0f} MeV",
+    return [f"N  {1000 * values[0]:6.0f}" + (" MeV (fixed)" if "N" in fixed else f" #pm {1000 * errors[0]:.0f} MeV"),
             f"S  {values[1]:6.3f}" + (" % (fixed)" if "S" in fixed else f" #pm {errors[1]:.3f} %"),
             f"C  {values[2]:6.3f}" + (" % (fixed)" if "C" in fixed else f" #pm {errors[2]:.3f} %"),
             f"#chi^{{2}}/ndf  {chi2:.1f} / {ndf}"]
@@ -145,9 +150,11 @@ def main():
     if any(not row["in_fit"] for row in rows):
         variants.append(("allpoints", False))
     for variant, fit_only in variants:
-        canvas = ROOT.TCanvas(f"fit_{variant}", "", 640 * len(resistances), 560)
+      for fixed_from_340 in FIXED_SETS[recipe]:
+        tag = f"{variant}" + (f"_{fixed_from_340}" if fixed_from_340 else "")
+        canvas = ROOT.TCanvas(f"fit_{tag}", "", 640 * len(resistances), 560)
         canvas.Divide(len(resistances), 1)
-        s_340 = None
+        from_340 = {}
         fitted = {}
         for column, resistance in enumerate(resistances):
             all_rows = points_of(rows, resistance, fit_only=False)
@@ -156,38 +163,42 @@ def main():
                 continue
             pad = canvas.cd(column + 1)
             draw_points(pad, fit_rows, all_rows, resistance, selection)
-            fit = fit_one(fit_rows, resistance, recipe, s_340)
+            fit = fit_one(fit_rows, resistance, recipe, from_340, fixed_from_340)
             if fit is None:
                 print(f"  {resistance} ohm: {len(fit_rows)} points, no fit")
                 continue
             fitted[resistance] = fit
             values, errors = fit["result"]["values"], fit["result"]["errors"]
             if resistance == 340:
-                s_340 = values[1]
+                from_340 = dict(N=values[0], S=values[1], C=values[2])
             fit["function"].SetLineColor(ROOT.kViolet)
             fit["function"].SetLineStyle(2)
             fit["function"].SetLineWidth(3)
             fit["function"].Draw("same")
             common.keep(common.text_box(parameter_lines(values, errors, fit["fixed"], fit["result"]["chi2"], fit["ndf"]),
                                         0.45, 0.66, 0.89, 0.88, 0.032, ROOT.kViolet)).Draw()
-            table.append(dict(selection=selection, recipe=recipe, variant=variant, mode="indep", resistance=resistance,
+            table.append(dict(selection=selection, recipe=recipe, variant=variant, mode="indep",
+                              fixed_from_340=fixed_from_340, resistance=resistance,
                               n_points=len(fit_rows), N_MeV=1000 * values[0], err_N_MeV=1000 * errors[0],
+                              N_fixed=int("N" in fit["fixed"]),
                               S_pct=values[1], err_S=errors[1], S_fixed=int("S" in fit["fixed"]),
                               C_pct=values[2], err_C=errors[2], C_fixed=int("C" in fit["fixed"]),
                               chi2=fit["result"]["chi2"], ndf=fit["ndf"]))
-            print(f"  [{variant}] {resistance} ohm: N {1000 * values[0]:.0f} +- {1000 * errors[0]:.0f} MeV, "
+            print(f"  [{tag}] {resistance} ohm: N {1000 * values[0]:.0f} +- {1000 * errors[0]:.0f} MeV"
+                  f"{' (fixed)' if 'N' in fit['fixed'] else ''}, "
                   f"S {values[1]:.3f} +- {errors[1]:.3f} %{' (fixed)' if 'S' in fit['fixed'] else ''}, "
                   f"C {values[2]:.3f} +- {errors[2]:.3f} %{' (fixed)' if 'C' in fit['fixed'] else ''}, "
                   f"chi2/ndf {fit['result']['chi2']:.1f}/{fit['ndf']}")
             output.cd()
-            fit["graph"].Write(f"gr_{variant}_{resistance}")
-            fit["function"].Write(f"f_{variant}_{resistance}_indep")
+            fit["graph"].Write(f"gr_{tag}_{resistance}")
+            fit["function"].Write(f"f_{tag}_{resistance}_indep")
         output.cd()
-        canvas.Write(f"c_{variant}_indep")
+        canvas.Write(f"c_{tag}_indep")
         common.save_canvas(canvas, os.path.join(args.workdir, "10_resolution_fit" + suffix
+                                                + (f"_{fixed_from_340}" if fixed_from_340 else "")
                                                 + ("_allpoints" if variant == "allpoints" else "") + ".png"))
 
-        if recipe == "uniforme" and len(fitted) >= 2:
+      if recipe == "uniforme" and len(fitted) >= 2:
             rows_by_resistance = {resistance: points_of(rows, resistance, fit_only=fit_only) for resistance in fitted}
             combined = fit_common(rows_by_resistance)
             if combined is None:
@@ -215,10 +226,11 @@ def main():
                      f"C  {values[1]:6.3f} #pm {errors[1]:.3f} % (common)",
                      f"#chi^{{2}}/ndf  {combined['result']['chi2']:.1f} / {combined['ndf']}"],
                     0.45, 0.66, 0.89, 0.88, 0.032, ROOT.kViolet)).Draw()
-                table.append(dict(selection=selection, recipe=recipe, variant=variant, mode="common", resistance=resistance,
+                table.append(dict(selection=selection, recipe=recipe, variant=variant, mode="common",
+                                  fixed_from_340="", resistance=resistance,
                                   n_points=len(fit_rows), N_MeV=1000 * values[2 + index], err_N_MeV=1000 * errors[2 + index],
-                                  S_pct=values[0], err_S=errors[0], S_fixed=0, C_pct=values[1], err_C=errors[1], C_fixed=0,
-                                  chi2=combined["result"]["chi2"], ndf=combined["ndf"]))
+                                  N_fixed=0, S_pct=values[0], err_S=errors[0], S_fixed=0, C_pct=values[1], err_C=errors[1],
+                                  C_fixed=0, chi2=combined["result"]["chi2"], ndf=combined["ndf"]))
                 output.cd()
                 curve.Write(f"f_{variant}_{resistance}_common")
             output.cd()

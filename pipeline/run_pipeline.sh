@@ -26,6 +26,7 @@ BASE=${1:?directory with reco_<R>ohm/}
 OUT=${2:-plot/pipeline_out}
 BES=${3:-plot/bes}
 PY=${PYTHON:-python3}
+PY_MPL=${PYTHON_MPL:-$PY}          # an interpreter with matplotlib, for the matplotlib final plot
 COLLIMATORS=${COLLIMATORS:-}
 HERE=$(cd "$(dirname "$0")" && pwd)
 RESISTANCES="340 400 500"
@@ -48,6 +49,8 @@ $PY "$HERE/s07_fit_corrected.py"     --workdir "$CEN"
 $PY "$HERE/s08_systematics.py"       --workdir "$CEN" --besdir "$BES"
 $PY "$HERE/s09_resolution_plots.py"  --workdir "$CEN"
 $PY "$HERE/s10_fit_resolution.py"    --workdir "$CEN"
+$PY "$HERE/s11_final_plot.py"        --workdir "$CEN"
+$PY_MPL "$HERE/s11_final_plot_matplotlib.py" --workdir "$CEN" || echo "matplotlib figure skipped (no matplotlib in $PY_MPL)"
 
 # ---------------------------------------------------------------- BES table of the codiceA recipe
 if [ -n "$COLLIMATORS" ] && [ ! -f "$BES/colls_energies_summary_340ohm.csv" ]; then
@@ -65,6 +68,8 @@ $PY "$HERE/s08_systematics.py"       --workdir "$HODO" --besdir "$BES"
 for BESKIND in cons nominal; do
   $PY "$HERE/s09_resolution_plots.py"  --workdir "$HODO" --bes $BESKIND
   $PY "$HERE/s10_fit_resolution.py"    --workdir "$HODO" --bes $BESKIND
+  $PY "$HERE/s11_final_plot.py"        --workdir "$HODO" --bes $BESKIND
+  $PY_MPL "$HERE/s11_final_plot_matplotlib.py" --workdir "$HODO" --bes $BESKIND || echo "matplotlib figure skipped"
 done
 
 # ------------------------------------------------ centroid, codice A recipe (its "cen" column)
@@ -76,5 +81,7 @@ $PY "$HERE/s02_combine_runs.py"      --workdir "$CENA"
 $PY "$HERE/s08_systematics.py"       --workdir "$CENA" --besdir "$BES"
 $PY "$HERE/s09_resolution_plots.py"  --workdir "$CENA"
 $PY "$HERE/s10_fit_resolution.py"    --workdir "$CENA"
+$PY "$HERE/s11_final_plot.py"        --workdir "$CENA"
+$PY_MPL "$HERE/s11_final_plot_matplotlib.py" --workdir "$CENA" || echo "matplotlib figure skipped"
 
 echo "done: $CEN, $HODO and $CENA"
