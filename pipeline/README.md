@@ -156,10 +156,27 @@ With the nominal BES subtracted the error bar carries no BES systematic (the dif
 between the two BES is not an uncertainty there): that is what reproduces slide 25.
 The nominal-BES points agree with Ruben's `hodo_corr_larger_bes` column to four digits.
 
-The per-run fits behind the points that differ (runs 20481, 20702, 21094, 21098) have
-the same sigma but a different error: on those runs HESSE fails in iminuit and the flat
-script takes the errors of the refit with the tails frozen, while HESSE converges in
-ROOT. The weights 1/err² then move the weighted mean by 0.003–0.005 %. On the August reco of this Mac the same chain gives points that differ by up to
+## Against the `main` branch on the same runs
+
+`resolution_hodo.py` of `main` (commit 4d63e50) run on the August files of this Mac with
+the same run exclusions and the pipeline's `--exclude 340:275 500:50 500:80` gives the
+same events, runs and windows at every point, and:
+
+| | value | error |
+|---|---|---|
+| hodoscope, conservative BES | ≤ 0.0008 % | ≤ 0.0006 % |
+| hodoscope, nominal BES (`hodo_corr_larger_bes`, error without `hodo_bes_syst`) | ≤ 0.0009 % | ≤ 0.0006 % |
+| centroid 0.182 (`cen` column) | ≤ 0.0013 % | ≤ 0.0015 % |
+
+What is left is in the double Crystal Ball fit of 14 of the 184 runs, and it is the
+minimiser, not the procedure: on the same input array, ROOT's Minuit2 (6.40) and
+iminuit's Minuit2 stop at points 1–3·10⁻⁴ apart in sigma/mu (run 20481), or one of
+them declares HESSE failed and the flat script falls back on the errors of the refit
+with the tails frozen (run 20950, 0.0333 against 0.0387), or they land in different
+minima of the seven-parameter model (run 20616, chi2 10.97 in ROOT against 11.74 in
+iminuit). The MIGRAD tolerance is iminuit's (0.1) in both. Identical CSVs would need
+the same Minuit2 build, i.e. iminuit for the per-run fit; the choice was to keep every
+fit in ROOT and accept the fourth digit. On the August reco of this Mac the same chain gives points that differ by up to
 0.02 % (different event counts per run, runs 20427–20429 and 20690 present).
 
 `bes_from_collimators.py` rebuilds Ruben's table from the collimator log at every
