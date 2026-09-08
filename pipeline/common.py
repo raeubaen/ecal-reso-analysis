@@ -275,6 +275,12 @@ def fill_histogram(name, values, nbins, low, high):
     return histogram
 
 
+# iminuit stops MIGRAD at EDM < 0.002 * tol * errordef with tol = 0.1; ROOT's default
+# tolerance is 0.01, ten times tighter, and the two then stop at slightly different
+# points of the same valley. Same tolerance, same stopping point.
+MINUIT_TOLERANCE = 0.1
+
+
 def initial_step(value):
     """iminuit's default initial step: a tenth of the seed, 0.1 for a seed of zero."""
     return 0.1 * abs(value) if value != 0 else 0.1
@@ -284,6 +290,7 @@ def _run_fitter(function, data, seeds, limits, fixed_names):
     """MIGRAD then HESSE on a ROOT::Fit::BinData with the TF1 as model. The FitResult
     lives inside the Fitter, so its numbers are copied out before the Fitter dies."""
     fitter = ROOT.Fit.Fitter()
+    fitter.Config().MinimizerOptions().SetTolerance(MINUIT_TOLERANCE)
     wrapped = ROOT.Math.WrappedMultiTF1(function, 1)   # must outlive the fit: no copy
     fitter.SetFunction(wrapped, False)
     for index, name in enumerate(DCB_PARAMETERS):
@@ -465,6 +472,7 @@ def fit_graph(graph, function, fixed=(), lower_limit_zero=True):
     current value. Returns dict(values, errors, chi2, ndf, valid, hesse_ok) and leaves
     the fitted parameters in the TF1."""
     fitter = ROOT.Fit.Fitter()
+    fitter.Config().MinimizerOptions().SetTolerance(MINUIT_TOLERANCE)
     wrapped = ROOT.Math.WrappedMultiTF1(function, 1)   # must outlive the fit: no copy
     fitter.SetFunction(wrapped, False)
     data = ROOT.Fit.BinData()
