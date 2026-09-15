@@ -202,23 +202,7 @@ than 70 % across the scan. The window is vertex ± 0.182 · 22 mm. Where the sca
 in y and 50 GeV in x); those points are drawn with an open circle. `01_windows.csv`
 records the window, the vertex, the width and why the scan failed, point by point.
 
-## 8. Known limits
-
-* The double Crystal Ball with free tails has near-degenerate minima on a few
-  low-statistics runs. ROOT's Minuit2 and iminuit's stop at points 1–3·10⁻⁴ apart in
-  σ/μ, or disagree on whether HESSE failed, on about 14 of 184 runs; on the final points
-  this is at most 0.0013 %. Same tolerance (0.1), same steps, same seeds: what differs is
-  the two builds of Minuit2. Identical CSVs would need iminuit for the per-run fit; the
-  choice was to keep every fit in ROOT.
-* `--window plateau` of `resolution_hodo.py` is not ported: after merge #2 it ends in a
-  `NameError` in the flat script too.
-* The `flat` method of `uniformita_pos.py` and a few diagnostic figures of
-  `drift_dcb_all.py` are not ported; the list is in `pipeline/README.md`.
-* The August reco of this Mac and Ruben's reco of 1 September differ in the events per
-  run and in the run lists at 340 Ω 200 GeV and 400 Ω 250 GeV: the slide numbers come
-  out only on his files.
-
-## 9. The flat scripts
+## 8. The flat scripts
 
 The scripts of the repository root are the previous, monolithic version of the same
 analysis and the reference the pipeline was validated against (`pipeline/README.md`,
