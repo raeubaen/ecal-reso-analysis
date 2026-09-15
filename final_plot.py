@@ -5,11 +5,6 @@ Stage 11 -- the final figure, everything on one canvas (ROOT).
 One column per resistance. On top: sigma/mu as measured, sigma/E after the
 subtractions with its total error, the points with a hand-set hodoscope window or a
 pooled fit marked, and the N/S/C fit curves of stage 10 with their parameter boxes
-One figure per fit variant, one curve and one box per resistance: for the codiceA
-recipe S held at the 340 ohm value (_S) and S and C both held (_SC); for the uniforme
-recipe the per-resistance fit (_indep) and the common one (_common). Below,
-on a log scale, the size of every term that entered. Nothing is fitted here: the curves
-are drawn from 10_resolution_fits.csv.
 
 The legends sit where the data are not: the top-right corner above the falling curve,
 and, for the terms, a strip under the axis.
@@ -27,7 +22,7 @@ import numpy as np
 import ROOT
 
 import common
-from s09_resolution_plots import TERMS_BY_RECIPE, TERM_STYLE, graph_of, styled
+from resolution_plots import TERMS, TERM_STYLE, graph_of, styled
 
 RESISTANCES = (340, 400, 500)
 TERMS_FLOOR = 3e-4          # the terms axis does not go below this (the sync syst does)
@@ -47,14 +42,14 @@ def parameter_lines(row):
             f"#chi^{{2}}/ndf  {row['chi2']:.1f} / {row['ndf']}"]
 
 
-def draw_top(pad, points, terms, fits, resistance, selection, central_label):
+def draw_top(pad, points, terms, fits, resistance, central_label):
     pad.SetGrid()
     pad.SetLeftMargin(0.13)
     pad.SetTopMargin(0.08)
     energies = [row["energy_true"] for row in points]
     top = 1.9 * max(row["sigma_raw"] for row in points)          # room for legend and boxes
     frame = common.keep(ROOT.TH2F(common.unique_name("top_frame"),
-                                  f"{resistance} #Omega, cut on the {selection}, A_{{tot}} > {common.A_TOT_MIN:.0f} ADC"
+                                  f"{resistance} #Omega, A_{{tot}} > {common.A_TOT_MIN:.0f} ADC"
                                   f";E_{{true}} [GeV];#sigma/E  [%]",
                                   10, 0.85 * min(energies), 1.15 * max(energies), 10, 0., top))
     frame.Draw()
@@ -97,14 +92,14 @@ def draw_top(pad, points, terms, fits, resistance, selection, central_label):
     legend.Draw()
 
 
-def draw_terms(pad, terms, recipe, bes_column):
+def draw_terms(pad, terms, bes_column):
     pad.SetGrid()
     pad.SetLogy()
     pad.SetLeftMargin(0.13)
     pad.SetBottomMargin(0.36)                      # the legend lives under the axis
     energies = [row["energy_true"] for row in terms]
     values = [row["sigma_raw"] for row in terms]
-    for term in TERMS_BY_RECIPE[recipe]:
+    for term in TERMS:
         column = bes_column if term == "bes" else term
         values += [row[column] for row in terms if np.isfinite(row[column]) and row[column] > 0]
     low, high = max(0.25 * min(values), TERMS_FLOOR), 2.5 * max(values)
@@ -119,7 +114,7 @@ def draw_terms(pad, terms, recipe, bes_column):
     raw = common.keep(styled(graph_of(terms, "sigma_raw"), 20, ROOT.kGray + 2))
     raw.Draw("PL")
     legend.AddEntry(raw, "#sigma/#mu", "pl")
-    for term in TERMS_BY_RECIPE[recipe]:
+    for term in TERMS:
         if term == "bes_syst" and bes_column == "bes_nom":
             continue                       # no BES systematic when the nominal BES is subtracted
         label, marker, colour = TERM_STYLE[term]
@@ -152,11 +147,10 @@ def main():
     points_all = common.read_csv(common.require(os.path.join(args.workdir, f"09_resolution_points{suffix}.csv")))
     fits_all = [row for row in common.read_csv(common.require(os.path.join(args.workdir, f"10_resolution_fits{suffix}.csv")))
                 if row["variant"] == "nominal"]
-    selection, recipe = points_all[0]["selection"], points_all[0]["recipe"]
+
     resistances = [resistance for resistance in RESISTANCES if any(row["resistance"] == resistance for row in points_all)]
     bes_column = "bes_nom" if args.bes == "nominal" else "bes"
-    central_label = ("- BES - synchrotron" if recipe == "uniforme"
-                     else f"- BES ({'nominal' if args.bes == 'nominal' else 'conservative'}) - synchrotron")
+    central_label = (f"- BES ({'nominal' if args.bes == 'nominal' else 'conservative'}) - synchrotron")
 
     variants = []
     for row in fits_all:
@@ -172,9 +166,10 @@ def main():
             terms = sorted([row for row in terms_all if row["resistance"] == resistance], key=lambda row: row["energy"])
             fits = [row for row in fits_all if row["resistance"] == resistance
                     and (row["mode"], str(row["fixed_from_340"])) == (mode, fixed_from_340)]
-            draw_top(canvas.cd(column + 1), points, terms, fits, resistance, selection, central_label)
-            draw_terms(canvas.cd(len(resistances) + column + 1), terms, recipe, bes_column)
+            draw_top(canvas.cd(column + 1), points, terms, fits, resistance, central_label)
+            draw_terms(canvas.cd(len(resistances) + column + 1), terms, bes_column)
         common.save_canvas(canvas, os.path.join(args.workdir, f"11_resolution{suffix}_{name}.png"))
+        common.save_canvas(canvas, os.path.join(args.workdir, f"11_resolution{suffix}_{name}.pdf"))
         output = ROOT.TFile(os.path.join(args.workdir, f"11_resolution{suffix}_{name}.root"), "RECREATE")
         canvas.Write("final")
         output.Close()

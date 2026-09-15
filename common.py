@@ -7,16 +7,6 @@ with an explicit HESSE after MIGRAD, exactly as the iminuit code did with migrad
 followed by hesse()). numpy is used only to select events and to compute plain
 statistics such as means, RMS and quantiles.
 
-Two selections share the pipeline and carry two different recipes, the ones the two
-drivers of the repository use:
-
-    centroid   -> recipe "uniforme"  (run_all.sh: uniformita_pos / uniformita_maps /
-                                      resolution_final_uniforme)
-    hodoscope  -> recipe "codiceA"   (run_all_hodoscope.sh: resolution_hodo.py)
-
-The recipe decides the weights of the run combination, the systematic terms and the
-N/S/C fit conventions. It is derived from the selection here, in one place, and every
-stage reads it from the CSV of the previous one.
 """
 
 import csv
@@ -52,13 +42,8 @@ A_TOT_MIN = 100.                 # threshold on the A_tot branch, in every selec
 SYNCHROTRON_COEFF = 1.92e-7      # sigma/E [%] = coeff * E_true^2.5
 CRYSTAL_WINDOW = 3               # the 3x3 matrix around (18, 6) summed for the amplitude
 
-SELECTIONS = ("centroid", "hodoscope")
-RECIPE = {"centroid": "uniforme", "hodoscope": "codiceA"}
-# half-window of the position cut in crystal units, by recipe: 0.2 in the uniformity
-# chain, 0.182 in resolution_hodo.py (its SEL constant, used for both its cuts)
-HALF_WINDOW = {"uniforme": 0.2, "codiceA": 0.182}
 # runs with fewer events than this are not fitted individually
-MIN_EVENTS_PER_RUN = {"codiceA": 300, "uniforme": 0}
+MIN_EVENTS_PER_RUN = 300
 MIN_EVENTS_POOLED = 500
 
 TAIL_NAMES = ("alpha_l", "alpha_h", "n_l", "n_h")
@@ -76,9 +61,6 @@ def true_energy(nominal):
 def synchrotron_pct(energy_true):
     return SYNCHROTRON_COEFF * energy_true ** 2.5
 
-
-def recipe_for(selection):
-    return RECIPE[selection]
 
 
 # ------------------------------------------------------------------ files
@@ -128,7 +110,7 @@ double pipeline_first_or_nan(const ROOT::RVecF &positions) {
 MATRIX_HALF = int((CRYSTAL_WINDOW + 1) / 2)
 
 
-def read_events(path, amplitude="a3x3", with_hodoscope=False):
+def read_events(path, amplitude="a3x3"):
     """All the per-event quantities the pipeline uses, as numpy arrays.
 
     amplitude  a3x3  the 3x3 sum around (18, 6), rebuilt from the A branch, as in
@@ -146,10 +128,11 @@ def read_events(path, amplitude="a3x3", with_hodoscope=False):
     else:
         raise ValueError(f"unknown amplitude {amplitude}")
     columns = ["run", "spill", "evt", "A_tot", "amplitude", "pos_eta", "pos_phi"]
-    if with_hodoscope:
-        for plane in ("x1", "x2", "y1", "y2"):
-            frame = frame.Define(f"hodo_{plane}", f"pipeline_first_or_nan(hodo_{plane}_pos)")
-            columns += [f"hodo_{plane}", f"hodo_{plane}_nclusters"]
+
+    for plane in ("x1", "x2", "y1", "y2"):
+        frame = frame.Define(f"hodo_{plane}", f"pipeline_first_or_nan(hodo_{plane}_pos)")
+        columns += [f"hodo_{plane}", f"hodo_{plane}_nclusters"]
+
     arrays = frame.AsNumpy(columns)
     events = {name: np.asarray(arrays[name]) for name in columns}
     for name in ("A_tot", "amplitude", "pos_eta", "pos_phi"):
@@ -223,7 +206,6 @@ def histogram_stats(counts, centres, low, high):
 
 
 def fit_window(values, energy, resistance):
-    """The fit.sh recipe: scale*E*(0.95, 1.05), then mean +- 3 RMS twice."""
     counts, edges = np.histogram(values, bins=HISTOGRAM_NBINS, range=(HISTOGRAM_LO, HISTOGRAM_HI))
     counts = counts.astype(float)
     centres = 0.5 * (edges[:-1] + edges[1:])
@@ -238,8 +220,6 @@ def fit_window(values, energy, resistance):
 
 
 def mode_window(values, energy, resistance):
-    """Fallback window centred on the mode, for runs whose peak is not where the
-    fit.sh recipe expects it."""
     nominal = SCALE[resistance] * energy
     near = values[(values > 0.5 * nominal) & (values < 1.3 * nominal)]
     if len(near) < 100:
@@ -320,7 +300,7 @@ def _copy_result(result, hesse_ok):
 def fit_dcb(values, energy, resistance, fixed_tails=None):
     """Double Crystal Ball fit of one set of amplitudes: uniformita_pos.fit_dcb.
 
-    The window comes from the fit.sh recipe (mode_window as fallback), the binning is
+    the binning is
     Freedman-Diaconis on the events inside the window, empty bins are ignored and the
     bin error is sqrt(N) (Neyman chi2, as TH1::Fit and as the iminuit LeastSquares
     with ey = sqrt(max(y, 1)) on the non-empty bins). Three MIGRAD+HESSE rounds, each

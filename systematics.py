@@ -3,9 +3,7 @@
 Stage 8 -- the systematic terms of every point, and save.
 
 Reads 02_per_energy.csv (nominal rows) and, for the centroid pass, 07_uniformity.csv.
-Two recipes, the two of the repository after merge #2; the selection decides which:
 
-  codiceA (hodoscope, resolution_hodo.py)
       BES from colls_energies_summary_<R>ohm.csv: BES_cons is subtracted, BES_formula
       gives the "larger BES" variation
       sigma_corr      = sqrt(sigma^2 - BES_cons^2 - sync^2)
@@ -15,14 +13,7 @@ Two recipes, the two of the repository after merge #2; the selection decides whi
       err_total       = drift (+) stat (+) vtx_syst (+) bes_syst (+) syn_syst
       err_total_nominal_bes = the same without bes_syst: with the nominal BES subtracted
                         the difference between the two BES is not an uncertainty
-  uniforme (centroid, resolution_final_uniforme.py --central raw --syst map)
-      BES from rereco_<R>_withBES.csv (column bes); a point without BES is dropped
-      sigma_corr      = sqrt(sigma^2 - BES^2 - sync^2)         (no position correction)
-      unif_syst       = sigma * |s_energy - s_mean| / sigma_corr, the spread of the
-                        corrected sigma/mu between the surface per energy and the surface
-                        of the resistance, propagated through the subtraction
-      err_total       = stat (+) drift (+) unif_syst
-      pos_eff         = sqrt(sigma^2 - s_energy^2), written for information only
+
 
 sync = 1.92e-7 * E_true^2.5 in percent. Every term is also written as a percentage of
 the measured sigma/mu (the *_frac columns). Writes 08_systematics.csv.
@@ -37,14 +28,14 @@ import numpy as np
 
 import common
 
-COLUMNS = ("resistance", "energy", "energy_true", "selection", "recipe", "window", "n_events", "n_run",
+COLUMNS = ("resistance", "energy", "energy_true","window", "n_events", "n_run",
            "pooled", "sigma_raw", "stat", "drift", "chi2_drift", "syst_tails", "vtx_syst", "bes", "bes_nom",
            "sync", "bes_syst", "syn_syst", "unif_syst", "pos_eff", "pos_naive", "s_run", "s_energy",
            "s_mean", "err_total", "err_total_nominal_bes", "sigma_corr", "sigma_corr_nominal_bes",
            "stat_frac", "drift_frac", "tails_frac", "vtx_frac", "bes_frac", "sync_frac", "unif_frac")
 
 
-def load_bes_codice_a(besdir, resistance):
+def load_bes(besdir, resistance):
     """{energy: (BES_cons, BES_formula)} from colls_energies_summary_<R>ohm.csv."""
     path = os.path.join(besdir, f"colls_energies_summary_{resistance}ohm.csv")
     if not os.path.exists(path):
@@ -57,28 +48,11 @@ def load_bes_codice_a(besdir, resistance):
     return out
 
 
-def load_bes_uniforme(besdir, resistance):
-    """{energy: bes} from rereco_<R>_withBES.csv, column 7 (uniformita_pos.load_bes)."""
-    path = os.path.join(besdir, f"rereco_{resistance}_withBES.csv")
-    if not os.path.exists(path):
-        print(f"  WARNING: {path} not found: every {resistance} ohm point is dropped (no BES)")
-        return {}
-    out = {}
-    with open(path) as handle:
-        for index, line in enumerate(handle):
-            if index == 0:
-                continue
-            parts = line.strip().split(",")
-            if len(parts) >= 7:
-                out[int(float(parts[0]))] = float(parts[6])
-    return out
-
-
 def subtract(sigma, *terms):
     return math.sqrt(max(sigma * sigma - sum(term * term for term in terms), 0.))
 
 
-def codice_a_row(point, bes_table):
+def bes_row(point, bes_table):
     sigma = point["sigma_over_mu"]
     bes_cons, bes_formula = bes_table.get(point["energy"], (0., 0.))
     sync = common.synchrotron_pct(point["energy_true"])
@@ -130,26 +104,22 @@ def main():
               if row["variation"] == "nominal"]
     if not points:
         raise SystemExit("no nominal point in 02_per_energy.csv")
-    recipe = points[0]["recipe"]
+
     uniformity = {}
-    if recipe == "uniforme":
-        uniformity = {(row["resistance"], row["energy"]): row
-                      for row in common.read_csv(common.require(os.path.join(args.workdir, "07_uniformity.csv")))}
 
     rows = []
     bes_tables = {}
     for point in sorted(points, key=lambda row: (row["resistance"], row["energy"])):
         resistance = point["resistance"]
         if resistance not in bes_tables:
-            bes_tables[resistance] = (load_bes_codice_a if recipe == "codiceA" else load_bes_uniforme)(args.besdir, resistance)
-        if recipe == "codiceA":
-            terms = codice_a_row(point, bes_tables[resistance])
-        else:
-            terms = uniforme_row(point, bes_tables[resistance], uniformity.get((resistance, point["energy"])))
+            bes_tables[resistance] = (load_bes)(args.besdir, resistance)
+
+        terms = bes_row(point, bes_tables[resistance])
+
         if terms is None:
             continue
         row = dict(resistance=resistance, energy=point["energy"], energy_true=point["energy_true"],
-                   selection=point["selection"], recipe=recipe, window=point["window"],
+                   window=point["window"],
                    n_events=point["n_events"], n_run=point["n_run"], pooled=point["pooled"],
                    sigma_raw=point["sigma_over_mu"], stat=point["stat"], drift=point["drift"],
                    chi2_drift=point["chi2_ndf_drift"], syst_tails=point["syst_tails"], vtx_syst=point["vtx_syst"])
@@ -163,8 +133,8 @@ def main():
         print(f"  {resistance} ohm {point['energy']:>4} GeV: sigma/mu {sigma:.4f}  -> sigma/E {row['sigma_corr']:.4f} "
               f"+- {row['err_total']:.4f} %   (stat {row['stat']:.4f}, drift {row['drift']:.4f}, BES {row['bes']:.3f}, "
               f"sync {row['sync']:.3f}"
-              + (f", vtx {row['vtx_syst']:.4f}, BES syst {row['bes_syst']:.4f}, sync syst {row['syn_syst']:.4f})"
-                 if recipe == "codiceA" else f", map syst {row['unif_syst']:.4f})"))
+              + f", vtx {row['vtx_syst']:.4f}, BES syst {row['bes_syst']:.4f}, sync syst {row['syn_syst']:.4f})")
+
     common.write_csv(os.path.join(args.workdir, "08_systematics.csv"), rows, COLUMNS)
 
 

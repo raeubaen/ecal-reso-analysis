@@ -4,8 +4,6 @@
 # extensions. The "!*/" line lets git descend into subdirectories: without it an
 # ignored directory is skipped and the files inside are never seen.
 
-*
-!*/
 !.gitignore
 
 # Python

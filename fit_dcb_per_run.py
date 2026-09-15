@@ -2,15 +2,10 @@
 """
 Stage 1 -- double Crystal Ball fit of the amplitude, run by run, and save.
 
-One selection per pass, --selection:
-  centroid    |pos_eta - 18| <= half, |pos_phi - 6| <= half   (half = 0.2, run_all.sh;
-              0.182 with --recipe codiceA, the "cen" column of resolution_hodo.py)
   hodoscope   the window on the hodoscope of resolution_hodo.py: vertex of the response
-              parabola +- 0.182 * 22 mm in x and in y, plus the four windows shifted by
+              parabola +- 4mm in x and in y, plus the four windows shifted by
               +- 1 mm that feed the vertex systematic (variations x_low, x_high, y_low,
-              y_high). Needs the curvature in crystal units of the per-run-normalised
-              profiles: --curvature-csv, i.e. 03_profiles.csv of the centroid pass (or
-              the flat profili_pernorm.csv).
+              y_high). 
 
 For every (resistance, energy, variation):
   * one POOLED fit of all the runs together (run = 0), whose tails seed the "fixed"
@@ -27,10 +22,7 @@ Writes, in --outdir:
   dcb/*.png            one panel per (resistance, energy): the per-run fits + pooled
 
 Usage:
-  python3 s01_fit_dcb_per_run.py --base <dir with reco_*ohm/> --outdir out/centroid \\
-      --selection centroid --exclude-runs 20592
-  python3 s01_fit_dcb_per_run.py --base <dir> --outdir out/hodoscope --selection hodoscope \\
-      --curvature-csv out/centroid/03_profiles.csv
+  python3 s01_fit_dcb_per_run.py --base <dir> --outdir out/hodoscope\\
 """
 
 import argparse
@@ -43,12 +35,12 @@ import common
 import hodoscope_window
 from common import runsets
 
-FIT_COLUMNS = ("resistance", "energy", "energy_true", "selection", "recipe", "amplitude",
+FIT_COLUMNS = ("resistance", "energy", "energy_true", "amplitude",
                "variation", "run", "tails_mode", "n_selected", "n_events", "n_bins",
                "peak", "err_peak", "sigma", "err_sigma", "sigma_over_mu", "err_sigma_over_mu",
                "chi2", "ndf", "alpha_l", "alpha_h", "n_l", "n_h", "window_lo", "window_hi",
                "valid")
-WINDOW_COLUMNS = ("resistance", "energy", "energy_true", "selection", "window", "half",
+WINDOW_COLUMNS = ("resistance", "energy", "energy_true", "window",
                   "n_base", "n_selected", "skipped", "reason",
                   "x_lo", "x_hi", "y_lo", "y_hi", "x_vertex", "y_vertex", "x_width", "y_width",
                   "x_ok", "y_ok", "x_why", "y_why", "fallback")
@@ -57,7 +49,6 @@ WINDOW_COLUMNS = ("resistance", "energy", "energy_true", "selection", "window", 
 def fit_row(fit, resistance, energy, args, variation, run, tails_mode, n_selected):
     value, error = common.relative_width(fit)
     row = dict(resistance=resistance, energy=energy, energy_true=common.true_energy(energy),
-               selection=args.selection, recipe=args.recipe,
                amplitude=args.amplitude, variation=variation, run=run, tails_mode=tails_mode,
                n_selected=int(n_selected), n_events=fit["n_events"], n_bins=fit["n_bins"],
                peak=fit["peak"], err_peak=fit["err_peak"], sigma=fit["sigma"],
@@ -103,7 +94,7 @@ def draw_fit_panel(fits_by_run, pooled_fit, resistance, energy, args):
         function.SetLineWidth(2)
         function.SetNpx(600)
         function.Draw("same")
-    title = f"{resistance} #Omega, {energy} GeV, {args.selection} selection"
+    title = f"{resistance} #Omega, {energy} GeV"
     canvas.cd()
     header = common.keep(ROOT.TLatex(0.01, 0.985, title))
     header.SetNDC()
@@ -111,11 +102,11 @@ def draw_fit_panel(fits_by_run, pooled_fit, resistance, energy, args):
     header.Draw()
     common.save_canvas(canvas, os.path.join(args.outdir, "dcb",
                                             f"dcb_fits_{energy}GeV_{resistance}ohm.png"))
+    common.save_canvas(canvas, os.path.join(args.outdir, "dcb",
+                                            f"dcb_fits_{energy}GeV_{resistance}ohm.pdf"))
+    common.save_canvas(canvas, os.path.join(args.outdir, "dcb",
+                                            f"dcb_fits_{energy}GeV_{resistance}ohm.root"))
 
-
-def centroid_cuts(events, base, half):
-    inside = (np.abs(events["u"]) <= half) & (np.abs(events["v"]) <= half)
-    return {"nominal": base & inside}
 
 
 def main():
@@ -123,42 +114,24 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", required=True, help="directory containing reco_<R>ohm/")
     parser.add_argument("--outdir", required=True)
-    parser.add_argument("--selection", choices=common.SELECTIONS, default="centroid")
-    parser.add_argument("--recipe", choices=("auto", "codiceA", "uniforme"), default="auto",
-                        help="systematics recipe carried downstream; auto = the one of the "
-                             "selection (centroid -> uniforme, hodoscope -> codiceA). "
-                             "--selection centroid --recipe codiceA reproduces the centroid "
-                             "column of resolution_hodo.py")
     parser.add_argument("--amplitude", choices=("a3x3", "atot"), default="a3x3",
                         help="a3x3 = sum of the 3x3 matrix rebuilt from A (default, as "
                              "resolution_hodo.py); atot = the A_tot branch")
     parser.add_argument("--resistances", nargs="+", type=int, default=[340, 400, 500])
-    parser.add_argument("--half", type=float, default=None,
-                        help="half-window in crystal units; default 0.2 for the centroid, "
-                             "0.182 for the hodoscope")
     parser.add_argument("--yplane", choices=("y1", "y2"), default="y1")
-    parser.add_argument("--curvature-csv", default=None,
-                        help="hodoscope only: CSV with the relative curvature in crystal "
-                             "units per (resistance, energy, coord), i.e. 03_profiles.csv "
-                             "of the centroid pass or profili_pernorm.csv")
     parser.add_argument("--tails", choices=("free", "fixed", "both"), default="both",
                         help="DCB tails per run: free, held at the pooled values, or both")
+
+    parser.add_argument("--half", required=False, type=float, default=4, help="hodoscope selection half window, in mm")
     parser.add_argument("--exclude-runs", nargs="*", type=int, default=[])
     parser.add_argument("--exclude", nargs="*", default=["340:275"],
                         help="R:E points dropped entirely (default 340:275, as both drivers)")
     runsets.add_argument(parser)
     args = parser.parse_args()
 
+    half = args.half
     dropped, kept_only = runsets.resolve(args.runset, args.exclude_runs)
     excluded_points = common.parse_excluded_points(args.exclude)
-    recipe = common.recipe_for(args.selection) if args.recipe == "auto" else args.recipe
-    if args.selection == "hodoscope" and recipe != "codiceA":
-        parser.error("the hodoscope selection exists only in the codiceA recipe")
-    args.recipe = recipe
-    half = args.half if args.half is not None else common.HALF_WINDOW[recipe]
-    hodoscope = args.selection == "hodoscope"
-    if hodoscope and not args.curvature_csv:
-        parser.error("--selection hodoscope needs --curvature-csv")
     os.makedirs(args.outdir, exist_ok=True)
     common.style()
     root_file = ROOT.TFile(os.path.join(args.outdir, "01_dcb_fits.root"), "RECREATE")
@@ -167,50 +140,47 @@ def main():
     for resistance, energy, path in common.resistance_energy_pairs(args.base, args.resistances,
                                                                     excluded_points):
         print(f"[{resistance} ohm {energy:>4} GeV] {os.path.basename(path)}", flush=True)
-        events = common.read_events(path, args.amplitude, with_hodoscope=hodoscope)
+        events = common.read_events(path, args.amplitude)
         base = (events["A_tot"] > common.A_TOT_MIN) & common.runset_mask(events["run"], dropped,
                                                                           kept_only)
+
         window_row = dict(resistance=resistance, energy=energy,
-                          energy_true=common.true_energy(energy), selection=args.selection,
-                          half=half, n_base=int(base.sum()), skipped=0, reason="",
+                          energy_true=common.true_energy(energy),
+                          n_base=int(base.sum()), skipped=0, reason="",
                           fallback="")
-        if hodoscope:
-            curvatures = hodoscope_window.crystal_curvatures(args.curvature_csv, resistance)
-            hodo_x, hodo_y = common.hodoscope_xy(events, args.yplane)
-            info = hodoscope_window.hodoscope_windows(hodo_x, hodo_y, events["A_tot"], base,
-                                                      curvatures, resistance, energy, half)
-            for coordinate in ("x", "y"):
-                scan = info["scan"][coordinate]
-                window_row.update({f"{coordinate}_vertex": scan["vertex"],
-                                   f"{coordinate}_width": scan["width"],
-                                   f"{coordinate}_ok": int(scan["ok"]),
-                                   f"{coordinate}_why": info["why"][coordinate]})
-            window_row["fallback"] = "+".join(info["fallback"])
-            window_row["window"] = hodoscope_window.window_label(info["fallback"])
-            for coordinate in info["fallback"]:
-                reason = info["why"][coordinate]
-                print(f"    {coordinate}: hand-set vertex of resolution_hodo.py"
-                      + (f" (scan failed: {reason})" if reason else " (overrides a successful scan)"))
-            missing = [c for c in ("x", "y") if info["windows"][c] is None]
-            if missing:
-                reason = "; ".join(f"{c}: {info['why'][c]}" for c in missing)
-                print(f"    SKIPPED, no window in {'+'.join(missing)} ({reason})")
-                window_row.update(skipped=1, reason=reason, n_selected=0)
-                window_rows.append(window_row)
-                continue
-            window_x, window_y = info["windows"]["x"], info["windows"]["y"]
-            window_row.update(x_lo=window_x[0], x_hi=window_x[1], y_lo=window_y[0],
-                              y_hi=window_y[1])
-            cuts = hodoscope_window.window_masks(hodo_x, hodo_y, base, window_x, window_y)
-            if cuts["nominal"].sum() < common.MIN_EVENTS_POOLED:
-                print(f"    SKIPPED, only {cuts['nominal'].sum()} events after the hodoscope cut")
-                window_row.update(skipped=1, n_selected=int(cuts["nominal"].sum()),
-                                  reason="fewer than 500 events in the window")
-                window_rows.append(window_row)
-                continue
-        else:
-            cuts = centroid_cuts(events, base, half)
-            window_row.update(window="centroid", x_lo=-half, x_hi=half, y_lo=-half, y_hi=half)
+
+        hodo_x, hodo_y = common.hodoscope_xy(events, args.yplane)
+        info = hodoscope_window.hodoscope_windows(hodo_x, hodo_y, events["A_tot"], base, resistance, energy, half)
+        for coordinate in ("x", "y"):
+            scan = info["scan"][coordinate]
+            window_row.update({f"{coordinate}_vertex": scan["vertex"],
+                               f"{coordinate}_width": scan["width"],
+                               f"{coordinate}_ok": int(scan["ok"]),
+                               f"{coordinate}_why": info["why"][coordinate]})
+        window_row["fallback"] = "+".join(info["fallback"])
+        window_row["window"] = hodoscope_window.window_label(info["fallback"])
+        for coordinate in info["fallback"]:
+            reason = info["why"][coordinate]
+            print(f"    {coordinate}: hand-set vertex of resolution_hodo.py"
+                  + (f" (scan failed: {reason})" if reason else " (overrides a successful scan)"))
+        missing = [c for c in ("x", "y") if info["windows"][c] is None]
+        if missing:
+            reason = "; ".join(f"{c}: {info['why'][c]}" for c in missing)
+            print(f"    SKIPPED, no window in {'+'.join(missing)} ({reason})")
+            window_row.update(skipped=1, reason=reason, n_selected=0)
+            window_rows.append(window_row)
+            continue
+        window_x, window_y = info["windows"]["x"], info["windows"]["y"]
+        window_row.update(x_lo=window_x[0], x_hi=window_x[1], y_lo=window_y[0],
+                          y_hi=window_y[1])
+        cuts = hodoscope_window.window_masks(hodo_x, hodo_y, base, window_x, window_y)
+        if cuts["nominal"].sum() < common.MIN_EVENTS_POOLED:
+            print(f"    SKIPPED, only {cuts['nominal'].sum()} events after the hodoscope cut")
+            window_row.update(skipped=1, n_selected=int(cuts["nominal"].sum()),
+                              reason="fewer than 500 events in the window")
+            window_rows.append(window_row)
+            continue
+
         window_row["n_selected"] = int(cuts["nominal"].sum())
         window_rows.append(window_row)
 
@@ -227,7 +197,7 @@ def main():
                 store_fit(root_file, pooled_fit, resistance, energy, variation, 0, "free")
             for this_run in sorted(int(value) for value in np.unique(run[cut])):
                 in_run = cut & (run == this_run)
-                if in_run.sum() < common.MIN_EVENTS_PER_RUN[recipe]:
+                if in_run.sum() < common.MIN_EVENTS_PER_RUN:
                     continue
                 values = amplitude[in_run]
                 if args.tails == "fixed":

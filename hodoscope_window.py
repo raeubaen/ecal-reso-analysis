@@ -1,17 +1,11 @@
 """
 The hodoscope window of resolution_hodo.py (post merge #2), used by stage 1 with
---selection hodoscope.
 
 The response <A_tot> is profiled against the hodoscope coordinate on the core of the
 beam (|A_tot / median - 1| < 0.10) and fitted with a parabola over [peak - h, peak + h]
 for every h in SCAN_HALVES; the vertex is the median over the scan and the result is
 accepted only if it does not depend on h (hodoscope_calib.parabola_scan, with the
-post-merge thresholds). The window is then
-
-    vertex +- half * CRYSTAL_WIDTH_MM          half = 0.182, CRYSTAL_WIDTH_MM = 22
-
-exactly as resolution_hodo.py does now: the crystal width W recovered from the
-curvatures is still computed and saved, but it no longer sets the window.
+post-merge thresholds).
 
 Where the scan fails, resolution_hodo.py carries hand-set vertices (BAD_PARABOLA_*):
 they override the scan for those (resistance, energy) points and the window is
@@ -33,15 +27,15 @@ SCAN_HALVES = (5., 6., 7., 8., 9., 10.)    # fit half-widths around the maximum 
 MIN_FITS = 4                               # how many of them must give a maximum
 VERTEX_SPREAD_MAX = 5.                     # allowed excursion of the vertex over the scan [mm]
 WIDTH_SPREAD_MAX = 0.7                     # allowed relative spread of W over the scan
-CRYSTAL_WIDTH_MM = 22.                     # --cry_width_mm of resolution_hodo.py
 VERTEX_SHIFT_MM = 1.                       # +- shift of the window for the vertex systematic
-COORDINATES = (("x", "pos_eta"), ("y", "pos_phi"))
 
-# hand-set vertices [mm] and half-widths [crystal units] of resolution_hodo.py
+COORDINATES = ("x", "y")
+
+# hand-set vertices [mm] and half-widths [mm] of resolution_hodo.py
 BAD_PARABOLA_VERTEX = {"x": {(500, 50): -6.5},
                        "y": {(400, 20): 11, (340, 225): 4, (500, 80): -6.8, (500, 30): 8,
                              (500, 40): -5, (500, 50): 2, (500, 60): -6}}
-BAD_PARABOLA_HALF = {"x": {}, "y": {(400, 20): 0.09}}
+BAD_PARABOLA_HALF = {"x": {}, "y": {(400, 20): 1.98}}
 
 
 def response_profile(coordinate, response):
@@ -95,8 +89,8 @@ def parabola_fit(centres, means, errors, low, high):
     return vertex, float(relative_curvature), quadratic.GetChisquare() / max(n_points - 3, 1), n_points
 
 
-def parabola_scan(profile, crystal_curvature):
-    """Vertex and crystal width from the scan of the fit half-width. Always returns a
+def parabola_scan(profile):
+    """Vertex from the scan of the fit half-width. Always returns a
     dict with 'ok' and, when not ok, 'why'."""
     out = dict(ok=False, why="", vertex=np.nan, width=np.nan, vertex_spread=np.nan,
                width_spread=np.nan, chi2ndf=np.nan, n_fits=0, peak=np.nan)
@@ -106,16 +100,14 @@ def parabola_scan(profile, crystal_curvature):
     centres, means, errors = profile
     peak = profile_peak(centres, means)
     out["peak"] = peak
-    if crystal_curvature is None or not (crystal_curvature < 0):
-        out["why"] = "no curvature in crystal units"
-        return out
+
     vertices, widths, chi2s = [], [], []
     for half_width in SCAN_HALVES:
         fit = parabola_fit(centres, means, errors, peak - half_width, peak + half_width)
         if fit is None:
             continue
         vertices.append(fit[0])
-        widths.append(float(np.sqrt(crystal_curvature / fit[1])))
+        widths.append(fit[1])
         chi2s.append(fit[2])
     out["n_fits"] = len(vertices)
     if len(vertices) < MIN_FITS:
@@ -134,17 +126,7 @@ def parabola_scan(profile, crystal_curvature):
     return out
 
 
-def crystal_curvatures(path, resistance):
-    """{(energy, 'pos_eta'|'pos_phi'): relative curvature in %/crystal^2} from the
-    per-run-normalised profiles (stage 3 03_profiles.csv, or profili_pernorm.csv)."""
-    out = {}
-    for row in common.read_csv(path):
-        if int(row["resistance"]) == resistance:
-            out[(int(row["energy"]), row["coord"])] = float(row["rel_pct"])
-    return out
-
-
-def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, curvatures, resistance, energy, half):
+def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half):
     """The (low, high) window in x and in y, with the scan diagnostics.
 
     Returns dict(windows={'x': (lo, hi) | None, 'y': ...}, fallback=[coords],
@@ -152,22 +134,26 @@ def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, curvatures, resistance, 
     """
     core = base_mask & (np.abs(a_tot / np.median(a_tot[base_mask]) - 1) < CORE_FRACTION)
     windows, why, fallback, scans = {}, {}, [], {}
-    for coordinate_name, centroid_name in COORDINATES:
+
+    for coordinate_name in COORDINATES:
         coordinate = hodo_x if coordinate_name == "x" else hodo_y
+
         profile = response_profile(coordinate[core], a_tot[core])
-        scan = parabola_scan(profile, curvatures.get((energy, centroid_name)))
+
+        scan = parabola_scan(profile)
+
         scans[coordinate_name] = scan
         why[coordinate_name] = "" if scan["ok"] else scan["why"]
         windows[coordinate_name] = None
         if scan["ok"]:
-            windows[coordinate_name] = (scan["vertex"] - half * CRYSTAL_WIDTH_MM,
-                                        scan["vertex"] + half * CRYSTAL_WIDTH_MM)
+            windows[coordinate_name] = (scan["vertex"] - half,
+                                        scan["vertex"] + half)
         # the hand-set vertex overrides the scan for the points listed
         if (resistance, energy) in BAD_PARABOLA_VERTEX[coordinate_name]:
             vertex = BAD_PARABOLA_VERTEX[coordinate_name][(resistance, energy)]
             half_used = BAD_PARABOLA_HALF[coordinate_name].get((resistance, energy), half)
-            windows[coordinate_name] = (vertex - half_used * CRYSTAL_WIDTH_MM,
-                                        vertex + half_used * CRYSTAL_WIDTH_MM)
+            windows[coordinate_name] = (vertex - half_used,
+                                        vertex + half_used)
             fallback.append(coordinate_name)
     return dict(windows=windows, fallback=fallback, why=why, scan=scans)
 
