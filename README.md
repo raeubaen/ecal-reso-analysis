@@ -1,556 +1,239 @@
 # Energy resolution analysis — ECAL test beam H4, 2026
 
-From Ruben: Using only ```run_all_hodoscopes.sh```
-Many files could be deleted...
+Energy resolution `σ/E = N/E ⊕ S/√E ⊕ C` of an ECAL 3×3 matrix exposed to electrons in
+the H4 line at the SPS, for three values of the CATIA feedback resistance (340, 400 and
+500 Ω, i.e. three gains). The observable is the sum of the amplitudes of the 3×3 matrix
+around crystal (η 18, φ 6), fitted run by run with a double Crystal Ball; the point at
+one energy is the weighted mean over the runs of σ/μ, from which the beam energy spread
+(BES) and the synchrotron radiation are subtracted in quadrature.
 
+The code to use is the **staged pipeline in `pipeline/`**: eleven scripts, one job
+each, every stage saving what it computed, every fit and every plot done with ROOT
+through PyROOT. It reproduces the flat scripts of the repository root as they are after
+merge #2 (`resolution_hodo.py`, `run_all_hodoscope.sh`, `run_all.sh`); those are kept
+as the reference they were validated against, see the last section.
 
-
-## Staged pipeline (branch refactor-root)
-
-`pipeline/` holds the same analysis split into ten scripts, one job each, every fit and
-every plot done with ROOT through PyROOT. It reproduces both drivers, `run_all.sh`
-(centroid selection) and `run_all_hodoscope.sh` (hodoscope selection), as they are after
-merge #2. See `pipeline/README.md`.
-
-Scripts to measure the energy resolution `σ/E = N/E ⊕ S/√E ⊕ C` of an ECAL module
-exposed to an electron beam in the H4 line at the SPS, with particular attention to
-the **non-uniformity of the response across the impact point**.
-
-This repository contains **code only**. Reconstructed data, intermediate CSV files
-and the plots produced are kept out (see `.gitignore`).
+This repository contains **code only**. Data, CSVs and plots stay out (`.gitignore`).
 
 ---
 
-## Expected inputs
+## 1. Requirements
 
-The scripts expect to run from a working directory containing:
+* A python with **PyROOT** (ROOT ≥ 6.26) and numpy. Nothing else is needed: the events
+  are read with RDataFrame, the fits use `ROOT::Fit::Fitter`, the plots are `TCanvas`.
+  On this Mac that is `/opt/homebrew/bin/python3` (ROOT 6.40); on lxplus
+  `source /cvmfs/sft.cern.ch/lcg/views/LCG_107/x86_64-el9-gcc13-opt/setup.sh`.
+* matplotlib, optional, for the twin of the final figure (`s11_final_plot_matplotlib.py`);
+  the driver skips it when the interpreter has none.
+* uproot, iminuit and matplotlib are needed only by the flat scripts, not by the pipeline.
+
+## 2. Inputs
 
 ```
-reco_340ohm/<E>_merged.root          13 energies
-reco_400ohm/<E>_400_merged.root       9 energies
-reco_500ohm/<E>_500_merged.root       7 energies
-bes/rereco_<R>_withBES.csv           beam energy spread per (resistance, energy)
+<data>/reco_340ohm/<E>_340_merged.root      (the August files are <E>_merged.root; both match)
+<data>/reco_400ohm/<E>_400_merged.root
+<data>/reco_500ohm/<E>_500_merged.root
+<bes>/colls_energies_summary_<R>ohm.csv     BES per (resistance, energy): Energy, BES_formula, BES_cons
+<bes>/rereco_<R>_withBES.csv                BES for the run_all.sh recipe only (column bes)
+timestamps_runs.txt                         only to rebuild the BES table from the collimator log
 ```
 
-The merged files hold the `h4_reco` tree. The variables used are `run`, `spill`,
-`evt`, `A_tot` (sum of the amplitudes over the 3×3 matrix, in ADC counts),
-`pos_eta` and `pos_phi` (hodoscope centroid, in crystal units).
+The reference data are Ruben's merged files of 1 September 2026 on EOS,
+`/eos/cms/store/group/dpg_ecal/comm_ecal/upgrade/testbeam/ECALTB_H4_Jun2026/Reco/`
+(the `BASE` of `run_all.sh`), and his BES tables at
+`rgargiul.web.cern.ch/plots_ecal_mattia/bes/`. The tree is `h4_reco`; the branches used
+are `run`, `spill`, `evt`, `A` with `sel_ieta`/`sel_iphi` (to rebuild the 3×3 sum),
+`A_tot` (for the threshold), `pos_eta`, `pos_phi` (ECAL centroid, crystal units) and the
+hodoscope `hodo_{x1,x2,y1,y2}_{nclusters,pos}`.
 
-The three directories correspond to three values of the CATIA preamplifier feedback
-resistance — 340, 400 and 500 Ω — that is, to three different gains.
+BES definitions (CERN-SL-Note-97-81 eq. 2, half-widths of collimators C3 and C8 in mm):
+`BES_formula = √(C3² + C8²)/(27√3)` (nominal) and `BES_cons = C3/(27√3)` (lower bound,
+"conservative", the one subtracted). If the table is missing,
+`pipeline/bes_from_collimators.py` rebuilds it from the xlsx export of the collimator
+jaws and the run time stamps; the driver does it when `COLLIMATORS` points to the xlsx.
 
-Most scripts take `--base` for the data directory and `--outdir`/`--plotdir` for the
-outputs, so the repository can live anywhere relative to the data.
-
-## Dependencies
-
-Python 3 with `numpy`, `uproot`, `iminuit`, `matplotlib`. The macros under `root/`
-require ROOT, and they are the only part that does: everything else reads the
-`.root` files through `uproot` and needs no ROOT installation.
+## 3. Quick start
 
 ```bash
-pip3 install --user numpy uproot iminuit matplotlib
+PYTHON=/opt/homebrew/bin/python3 bash pipeline/run_pipeline.sh <data> <out> <bes>
 ```
 
----
+About ten minutes on a laptop, three passes, three output directories:
 
-## Main chain
-
-Order matters: each step reads the outputs of the previous one.
-
-| # | script | what it does |
-|---|---|---|
-| 0 | `runsets.py` | Not a script: the definition of which runs belong to which readout condition, imported by everything that reads runs. See **Run conditions** below. |
-| 1 | `drift_dcb_all.py` | Base engine. Double-Crystal-Ball fit of `A_tot` **run by run**, with the iterative mean ± 3 RMS window and Freedman-Diaconis binning. Writes peak and σ per run, the drift systematic, the 2D maps and the profiles. |
-| 2 | `uniformita_pos.py` | Non-uniformity correction. Estimates the quadratic response surface in (η, φ) and compares four treatments: none, event-by-event correction, quadrature subtraction, and reweighting to flat illumination. |
-| 3 | `uniformita_maps.py` | Three estimates of the same surface — per run, per energy, averaged per resistance — which yield the **centroid systematic**. Three stages: `--stage moments`, `--stage apply`, `--stage collect`. |
-| 4 | `resolution_final_uniforme.py` | Final curve. Subtracts BES, synchrotron and the position term in quadrature, then fits `N ⊕ S ⊕ C` per resistance and simultaneously with S and C in common. |
-| 5 | `fit_root_all.py` + `root/fit_resolution.C` | Repeats the same fits in ROOT and stores TGraphErrors, TF1, TCanvas and a summary TTree in a `.root` file. |
-
-Every step takes `--runset {standard,filter50,all}`, which defaults to `standard`.
-
-```bash
-# 1
-python3 drift_dcb_all.py --base <data> --outdir plot
-
-# 2  (in blocks of a few energies: each call writes its own cache)
-python3 uniformita_pos.py --base <data> --outdir plot/uniformita \
-    --resistances 340 --energies 20 30 40 --exclude-runs 20592
-python3 uniformita_pos.py --only-collect --resistances 340 400 500
-
-# 3
-python3 uniformita_maps.py --stage moments --resistances 340 400 500
-python3 uniformita_maps.py --stage apply   --resistances 340 400 500
-python3 uniformita_maps.py --stage collect
-
-# 4
-python3 resolution_final_uniforme.py --central run --syst map --suffix _unif
-
-# 5
-bash root/run_fit_root.sh
-```
-
-### The 50 MHz condition
-
-The same chain, with `--runset filter50` and separate output directories:
-
-```bash
-python3 uniformita_pos.py  --runset filter50 --exclude-runs 20592 \
-    --outdir plot/uniformita_50mhz --resistances 340 --energies 60 80 150 250
-python3 uniformita_pos.py  --only-collect --outdir plot/uniformita_50mhz --resistances 340
-
-python3 uniformita_maps.py --stage moments --runset filter50 --exclude-runs 20592 \
-    --outdir plot/uniformita_maps_50mhz --resistances 340 --energies 60 80 150 250
-python3 uniformita_maps.py --stage apply   --runset filter50 --exclude-runs 20592 \
-    --outdir plot/uniformita_maps_50mhz --resistances 340 --energies 60 80 150 250
-python3 uniformita_maps.py --stage collect --outdir plot/uniformita_maps_50mhz --resistances 340
-
-python3 resolution_final_uniforme.py --central run --syst map --suffix _50mhz \
-    --unif  plot/uniformita_50mhz/uniformita_pos.csv \
-    --maps  plot/uniformita_maps_50mhz/uniformita_maps.csv \
-    --cache plot/uniformita_50mhz/_cache --exclude 340:275
-```
-
-Run 20592 has to be excluded by hand even here: it is nominally a 150 GeV run but its
-median A_tot matches 80 GeV, so it is not at the energy its label says.
-
-With four energies and three free parameters the N/S/C fit has one degree of freedom
-and S comes out unconstrained. Fixing S at the standard value is the only way to read
-N and C off these points.
-
-**Watch out for `--only-collect`**: it rewrites the summary CSV with only the
-resistances passed in `--resistances`. Run on a single resistance, it drops the
-others from the CSV (the cache is untouched, so re-running it on all three is
-enough to recover).
-
----
-
-## Supporting studies
-
-These do not feed the chain, but they produce the results that justify it.
-
-| script | what it shows |
-|---|---|
-| `quattro_metodi.py` | Comparison of four ways of extracting σ/E: global fit, mean of the per-run σ, rescaling to a reference peak, and separated populations. This is what justifies fitting run by run: a global fit on an energy with two response populations fits two bumps with a single function. |
-| `diagnosi_60GeV.py` | `A_tot` distribution run by run: the plot where the two populations are visible. |
-| `profili_pernorm.py` | `⟨A_tot⟩` vs centroid profiles, normalising every event to the peak of its own run, fitted with `a + bx + cx²`. Without that normalisation the profile of an energy with several runs is the composition of the runs rather than a response curve. The CSV also reports the curvature one would get without normalising. |
-| `linearity.py` | Linearity of the peak against the true beam energy. |
-| `sistematica_risoluzione.py` | Drift systematic on σ, scaled until χ²/ndf = 1. |
-| `fit_fixedSC.py` + `root/fit_fixedSC.C` | Fits with S and C frozen at the values of a reference resistance, to check whether the three share the same stochastic and constant terms. |
-
-`resolution_final.py` is the previous version of the final curve, superseded by
-`resolution_final_uniforme.py`. It is kept because `fit_fixedSC.py` reads the CSV it
-produces.
-
----
-
-## Runs used
-
-The standard set, after `--runset standard` drops the 50 MHz runs, the 275 GeV high
-population and the excluded outliers (see **Run conditions** below).
-
-### 340 ohm — 13 energies, 39 runs
-
-| E [GeV] | runs |
-|---|---|
-| 20 | 20895 20896 20897 20898 20899 |
-| 30 | 20541 |
-| 40 | 20530 |
-| 60 | 20528 |
-| 80 | 20526 |
-| 100 | 20521 |
-| 120 | 20474 |
-| 150 | 20535 |
-| 175 | 20539 |
-| 200 | 20427 20428 20429 20434 |
-| 225 | 20513 20514 20515 20517 20518 20615 20616 20617 |
-| 250 | 20481 20482 20560 20561 20562 20563 20564 20565 20566 20585 |
-| 275 | 20636 20637 20638 20639 |
-
-Eight of these twelve energies (275 GeV is excluded from the final curve) are left
-with a **single run**, which is why the drift systematic cannot be estimated there.
-
-### 400 ohm — 9 energies, 54 runs
-
-| E [GeV] | runs |
-|---|---|
-| 20 | 20753 |
-| 40 | 20841 20842 20843 |
-| 60 | 20847 20848 20849 |
-| 80 | 20909 20911 20912 20913 20914 20915 20917 20918 20919 20920 |
-| 100 | 20769 20770 20771 20772 |
-| 150 | 20780 20781 20782 20786 20787 20788 20789 20799 20800 20801 |
-| 200 | 20700 20701 20702 |
-| 225 | 20676 20677 20678 20679 20680 20681 |
-| 250 | 20683 20684 20686 20687 20688 20689 20690 20691 20692 20693 20694 20695 20696 20699 |
-
-### 500 ohm — 7 energies, 30 runs
-
-| E [GeV] | runs |
-|---|---|
-| 30 | 21045 21046 21047 |
-| 40 | 21090 21091 21092 21093 21094 21095 21096 21097 21098 21099 |
-| 50 | 21033 21034 21035 21036 21037 |
-| 60 | 21081 21082 21116 |
-| 80 | 21119 |
-| 100 | 21056 21057 21058 |
-| 150 | 20938 20950 20951 20953 20954 |
-
-500 ohm 50 GeV is dropped from the final curve because no BES is available for it.
-
-Two runs deserve a note, because they are kept in the standard set but their
-configuration is not fully documented: **20615-20617** (225 GeV) are marked
-`340 ohm 35 MHz LPF on` in the run sheet, a low-pass filter that does not shift the
-response but does change the shaping; **20636-20639** (275 GeV) have an empty CATIA
-resistance field.
-
----
-
-## Systematics
-
-The nominal point is the weighted mean over runs of sigma/mu from the per-run
-double-CB fit, each run corrected event by event for the response non-uniformity with
-the parabola of that run. Three contributions are then subtracted in quadrature,
-because they are not calorimeter resolution:
-
-```
-(sigma/E)^2 = (sigma/mu)^2 - BES^2 - synchrotron^2 - POS_eff^2 - drift^2
-```
-
-POS_eff only in the chain that cuts on the centroid; drift wherever it is defined,
-that is on the points with more than one run.
-
-| term | what it is | how it is obtained |
-|---|---|---|
-| BES | beam energy spread: the SPS does not deliver monochromatic electrons | `dp/p [%] = sqrt(C3^2 + C8^2)/(27*sqrt(3))` from the collimator half-openings in mm, eq. (2) of CERN-SL-Note-97-81. Read from `bes/rereco_<R>_withBES.csv` |
-| synchrotron | radiation loss in the beam-line magnets | `1.92e-7 * E^2.5` in percent, on the true beam energy. Negligible below 100 GeV, 0.17 % at 250 |
-| POS_eff | the response is not flat across the selection window, so part of the width comes from where the shower landed | defined as what the correction actually removes, `POS_eff^2 = (sigma_raw/mu)^2 - (sigma_corr/mu)^2`. See below |
-
-**Why POS_eff and not std(f)/mean(f).** The obvious estimate of the position term is
-the spread of the response factor over the events. It **overestimates**: 0.166 %
-against 0.132 % at 340 ohm, 0.184 against 0.089 at 500. Quadrature subtraction is
-exact for the total RMS but not for the sigma of the *core* of a double-CB, and the
-position term is a parabola over a nearly flat beam, so it is not Gaussian and widens
-the tails more than the core. Verified both ways: on the truncated RMS the quadrature
-identity holds exactly (340 ohm 40 GeV: 1.0540 % to 1.0411 % measured against 1.0414
-expected), on the fitted sigma it does not.
-
-**The drift is on the peak, not on the resolution.** The sigma of each run is measured
-about the peak of that run, so a drift between runs does not enter it directly: what
-the run-to-run comparison measures is the instability of the *response*, and it is the
-same instability which, acting inside a run, widens the sigma. So the drift is
-estimated on the per-run **peaks** — the extra error which, added in quadrature, makes
-their fit to a constant give chi2/ndf = 1 — expressed in percentage points of the mean
-peak, `100 * s_peak / <peak>`, which makes it subtractable in quadrature from sigma/mu.
-
-This is worth stating plainly: subtracting a *run-to-run* instability from a *per-run*
-sigma assumes the same instability operates within a run. That assumption is not
-measured here. The opposite view — that a per-run sigma already excludes drift and
-nothing should be removed — is defensible too.
-
-Measuring it on the peak rather than on the sigma changes the size of the term by an
-order of magnitude, because the peak is determined far better than the sigma
-(`d_peak/peak ~ 1e-4` against `d_sigma/sigma ~ 1e-2`), so a real gain step of a tenth
-of a percent is overwhelming evidence on the peak and invisible on the sigma. At
-500 ohm 60 GeV the three runs sit at -0.05, -0.09 and +0.17 % of the mean peak with
-errors of 0.02 %: chi2/ndf = 142, drift 0.139 %. On the sigmas the same three runs gave
-chi2/ndf = 0.08 and a drift of exactly zero.
-
-**A systematic on the fit model.** The double CB has four tail parameters. Left free
-per run they are badly determined — `n_l` and `n_h` rail against their limit of 10 in
-most fits — and sigma, correlated with them, carries an error about twice what it
-would otherwise have. Held at the values of the pooled fit of the same energy the
-error on sigma shrinks by a factor 1.4 to 1.9, and a bootstrap confirms the smaller
-error is the true one; but sigma itself moves by up to 1 %, so it is a change of
-model, not a free improvement. `--tails both` (the default) therefore takes the
-free-tail fit as the nominal and carries `|free - fixed|` as a systematic. It is an
-ambiguity on the measured value rather than a width to remove, so unlike the others it
-goes **into** the error bar.
-
-The error bar is the statistical term and the fit-model systematic; drift and POS_eff
-are subtracted rather than carried:
-
-| term | how it is obtained |
-|---|---|
-| statistical | weighted variance of the per-run sigma/mu, `SE^2 = sum w (x - xbar)^2 / (sum w * (n_eff - 1))` with `n_eff = (sum w)^2 / sum w^2`. This already contains both the noise of the individual fits and the run-to-run spread. Where a point has a single run it is undefined and the fit error is used |
-| drift | subtracted as well, and **not** an error bar: run-to-run instability of the **response**, measured on the per-run **peak** and not on the per-run sigma. See **The drift is on the peak** below |
-| centroid | how much the answer depends on **how** the response surface is estimated: the difference between correcting with the parabola of each run and correcting with the parabola of the energy, `uniformita_maps.py`. Median 0.0006 percentage points, and exactly zero on the six points with a single run, where the two maps coincide by construction |
-
-Typical sizes, as medians over the points of each resistance:
-
-| | statistical | drift | centroid |
+| directory | selection | recipe | what it is |
 |---|---|---|---|
-| 340 ohm | 0.008 | 0.008 | 0.0004 |
-| 400 ohm | 0.009 | 0.020 | 0.0007 |
-| 500 ohm | 0.011 | 0.018 | 0.0042 |
+| `<out>/hodoscope/` | hodoscope window | `codiceA` | the nominal analysis (`run_all_hodoscope.sh`): slides 24 (conservative BES) and 25 (`_nominal_bes` files) of the ECAL Days talk |
+| `<out>/centroid_codiceA/` | ECAL centroid, ±0.182 crystals | `codiceA` | the "cen" column of `resolution_hodo.py`: slide 26 |
+| `<out>/centroid/` | ECAL centroid, ±0.2 crystals | `uniforme` | the `run_all.sh` chain with the response-surface correction and the map systematic |
 
-**A caveat on the chi2.** After the run exclusions, eight of the eleven energies at
-340 ohm that survive the hodoscope selection have a single run. There the drift systematic is zero by construction and the
-error bar is purely statistical, so the chi2 of the N/S/C fit is not a measure of
-goodness of fit: it is dominated by a point-to-point scatter that nothing is left to
-estimate. `sistematica_risoluzione.py --fallback` exists to assign those points the
-systematic measured where two or more runs are available; whether to apply it is an
-open choice.
+The figures to look at are `11_resolution_S.png` (fit with S held at the 340 Ω value for
+400 and 500 Ω, as in the slides) and `11_resolution_SC.png` (S and C held), each with a
+`_mpl.png` twin drawn with matplotlib from the same CSVs. The numbers are in
+`08_systematics.csv` (every term of every point), `09_resolution_points.csv` (the points
+of the plot) and `10_resolution_fits.csv` (N, S, C).
 
-**Are the per-run error bars right?** The bar is the HESSE error of the double-CB fit
-propagated to the ratio, `e = (sigma/mu) * sqrt((d_sigma/sigma)^2 + (d_peak/peak)^2)`.
-The peak term contributes nothing — `d_peak/peak ~ 1e-4` against `d_sigma/sigma ~ 1e-2`
-— and although sigma and peak are correlated, `rho ~ -0.45`, adding the covariance term
-changes the bar by less than 0.5 %. The bar is, to all intents, `d_sigma/mu`.
+Environment variables of the driver: `PYTHON` (interpreter with PyROOT), `PYTHON_MPL`
+(interpreter with matplotlib, default `PYTHON`), `COLLIMATORS` (xlsx of the jaws, to
+rebuild the BES table when absent).
 
- The whole drift depends on them, so they were
-checked against a bootstrap — `dcb_error_check.py`. The bar on each per-run sigma/mu is
-the HESSE error of the double-CB fit propagated to the ratio,
-`e = (sigma/mu) * sqrt((d_sigma/sigma)^2 + (d_peak/peak)^2)`. It comes out three to
-four times larger than `sigma/sqrt(2N)`, but that reference does not apply here: it is
-the error on the RMS of a Gaussian from an unbinned ML fit, whereas sigma is the width
-of the *core* of a seven-parameter double CB fitted by binned least squares and
-correlated with the four tail parameters. Resampling the events of a run and refitting
-gives, as the median of HESSE / bootstrap:
+## 4. The stages, one by one
 
-| point | runs | median ratio |
+Every stage is a script with `--help`. Stages that read events take `--base <data>`,
+the others only `--workdir`, the output directory of the pass. A stage can be rerun
+alone: it reads the CSVs of the previous ones and overwrites its own outputs.
+
+| # | script | reads | writes |
+|---|---|---|---|
+| 1 | `s01_fit_dcb_per_run.py --base D --outdir W --selection {centroid,hodoscope}` | ROOT files | `01_dcb_per_run.csv` (peak, σ, errors, σ/μ per run, tails free and fixed, pooled fit as run 0), `01_windows.csv`, `01_dcb_fits.root`, `dcb/*.png` |
+| 2 | `s02_combine_runs.py --workdir W` | 1 | `02_per_energy.csv` (weighted mean, stat, drift, vertex systematic), `02_per_run.csv`, `runs/*.png`, `drift_check_<R>ohm.png` |
+| 3 | `s03_maps_and_profiles.py --base D --workdir W` | 1 + ROOT | `03_moments.csv`, `03_profiles.csv` (curvature in crystal units, the columns of `profili_pernorm.csv`), `03_parabola_centroide.csv`, `maps/`, `profiles/` |
+| 4 | `s04_fit_parabolas.py --workdir W` | 3 | `04_surface_per_run.csv` |
+| 5 | `s05_average_parabolas.py --workdir W` | 3 | `05_surface_mean.csv` |
+| 6 | `s06_correct_amplitudes.py --base D --workdir W --mode {run,energy,mean}` | 1, 3, 4, 5 + ROOT | `06_corrected_<mode>.root`, `06_correction_<mode>.csv` |
+| 7 | `s07_fit_corrected.py --workdir W` | 2, 5, 6 | `07_dcb_corrected.csv`, `07_uniformity.csv`, `uniformity_<R>ohm.png` |
+| 8 | `s08_systematics.py --workdir W --besdir B` | 2, 7, BES | `08_systematics.csv` |
+| 9 | `s09_resolution_plots.py --workdir W [--bes nominal]` | 8 | `09_resolution_points.csv`, `09_resolution_terms.png` |
+| 10 | `s10_fit_resolution.py --workdir W [--bes nominal]` | 9 | `10_resolution_fits.csv`, `10_resolution_fits.root`, `10_resolution_fit*.png` |
+| 11 | `s11_final_plot.py --workdir W [--bes nominal]`, `s11_final_plot_matplotlib.py` | 8, 9, 10 | `11_resolution_<variant>.png`, `..._mpl.png` |
+
+Stages 3 to 7 are the position correction of the `run_all.sh` chain and run only in the
+`centroid` pass. The hodoscope pass runs 1, 2, 8, 9, 10, 11 and needs
+`--curvature-csv <out>/centroid/03_profiles.csv` at stage 1 (the parabola scan checks
+its curvature against the one in crystal units), so the centroid pass comes first.
+
+Options of stage 1 worth knowing:
+
+| option | default | meaning |
 |---|---|---|
-| 340 ohm 225 GeV | 7 | 1.00 |
-| 400 ohm 80 GeV | 10 | 0.72 |
-| 500 ohm 60 GeV | 3 | 0.83 |
+| `--selection` | `centroid` | `centroid` cuts on `pos_eta`, `pos_phi`; `hodoscope` on the hodoscope window |
+| `--recipe` | `auto` | `auto` = `uniforme` for the centroid, `codiceA` for the hodoscope; `--selection centroid --recipe codiceA` gives the "cen" column of `resolution_hodo.py` |
+| `--amplitude` | `a3x3` | the 3×3 sum rebuilt from `A`; `atot` reads the `A_tot` branch (identical on the current files) |
+| `--half` | 0.2 (`uniforme`) / 0.182 (`codiceA`) | half-window of the position cut in crystal units |
+| `--tails` | `both` | DCB tails free, held at the pooled fit, or both (the "fixed" fit is written next to the free one) |
+| `--runset`, `--exclude-runs`, `--exclude R:E` | `standard`, none, `340:275` | run selection, see §6 |
+| `--yplane` | `y1` | hodoscope y plane |
 
-The bars are right on average and, where they are not, they are **smaller** than the
-truth by 20-30 %. The direction matters: too-small errors make the chi2 too large and
-therefore the drift too large, so the points where the drift comes out zero would come
-out zero with the correct errors as well.
+`--bes nominal` (stages 9, 10, 11, `codiceA` only) subtracts the nominal BES instead of
+the conservative one and drops the BES systematic from the error bar; the files get the
+suffix `_nominal_bes`.
 
-**Reading a drift of zero.** Measured on the peak the drift is non-zero at almost
-every point with more than one run. Where it is zero, the `nrun_*` and `*_chi2`
-columns say which of two things happened:
+## 5. What the two recipes do
 
-* `nrun = 1` — a single run, no dispersion to measure, drift undefined rather than
-  small. Eight of the eleven energies at 340 ohm are in this case;
-* `nrun > 1` and `chi2/ndf <= 1` — the per-run peaks are already compatible with a
-  constant, so the extra error needed is exactly zero.
+The recipe follows the selection and travels in the CSVs (`recipe` column), so each
+stage picks the right convention by itself.
 
-The two are drawn differently in the lower panel of the resolution figure: a cross on
-the axis for a single run, an open square for a drift that came out zero.
-`drift_check_<chain>_<R>ohm.png` shows the peaks run by run with the chi2 that decided
-it.
-
-Two systematics that were **measured and found negligible**, and are therefore not
-carried: the granularity of the response map (grids of 12, 40 and 150 bins per side
-give a median spread of 0.001-0.003 percentage points, under 1 % of POS_eff) and the
-choice of a flat-illumination reweighting, which does not remove the position term at
-all and is kept only as a cross-check.
-
----
-
-## Cutting on the hodoscope instead of the centroid
-
-The standard selection cuts on the ECAL centroid, which is built from the same
-amplitudes whose width is being measured. `resolution_hodo.py` repeats the analysis
-with the position cut taken from the hodoscope, which is independent of the
-calorimeter.
-
-**Which planes.** x is the average of the two x planes. y is taken from **y1**
-(`--yplane`, default y1). The two y planes are equally efficient — each fires exactly
-one cluster on 43 to 46 % of the events; y2 is less often empty (2.4 % against 6.0 %)
-and correspondingly more often multi-cluster — so efficiency does not choose between
-them. What chooses is the shape: profiled against A_tot, y1 gives a clean parabola
-over its whole range while y2 is jagged below zero and usable only above it. Cutting
-on y1 needs no range restriction and keeps the window centred on the crystal instead
-of one-sided.
-
-**The one-cluster requirement** applies to each plane used — x1, x2 and y1, all three
-with exactly one cluster — and it is what costs the statistics: about 35 % of the
-events survive it (86 % on x1, 81 % on x2, 46 % on y1). The surviving fraction is
-written to the output CSV point by point.
-
-**Orientation.** hodo x maps to eta and hodo y to phi, with the y axis inverted: phi
-*decreases* as hodo y increases. Regressing the centroid on the hodoscope over the
-core of the beam gives `d(eta)/dx ~ +0.037` and `d(phi)/dy ~ -0.039` crystals per mm,
-with off-diagonal terms of 1 to 2 % of those, i.e. a residual rotation between the
-hodoscope axes and the crystal axes of about **1 degree**. Over a window of
-+- 0.2 crystals (~ +- 5 mm) that displaces a corner by 0.08 mm, so it is ignored. The
-1/0.037 = 27 mm per crystal that the regression implies is an overestimate of the
-24.2 mm pitch, attenuated by regression dilution — which is why the scale is taken
-from the ratio of the curvatures instead.
-
-**No range is imposed a priori** on either coordinate: the profile covers the whole
-range the data span, from the 0.5th to the 99.5th percentile.
-
-**Two ways of setting the window**, through `--window`:
-
-`plateau` (default) needs no fit: the window is the contiguous range around the
-maximum of the response profile where `<A_tot>` stays within `--tol`, 0.5 % by
-default, of its plateau value. Windows at different energies are then comparable by
-construction, because the response falls by the same amount inside each.
-
-`parabola` takes the window as vertex +- `--half` * W, with the vertex of the response
-parabola as the centre and W the crystal width from the ratio of the curvatures in
-millimetres and in crystal units.
-
-The fit range is not chosen, it is **scanned**. A single fixed range cannot work: the
-response is parabolic only near the crystal centre, so a fit over everything the data
-span puts the lever arm on the tails and the vertex follows them; but a fixed window
-around the maximum cannot be right at every energy either, because the beam moves --
-the x vertex runs from -3 mm at 20 GeV to -10 mm at 175 GeV -- and at the top energies
-part of the crystal falls outside the hodoscope acceptance altogether. So the profile
-is fitted over `[peak - h, peak + h]` for every h in `SCAN_HALVES` = 5, 6, 7, 8, 9,
-10 mm, **independently in x and in y**, and the answer is accepted only if it does not
-depend on h:
-
-| check | threshold | what it catches |
+| | `uniforme` (centroid, `run_all.sh`) | `codiceA` (hodoscope and centroid 0.182, `resolution_hodo.py`) |
 |---|---|---|
-| fits with a maximum inside their own range | at least 4 of 6 | profiles with no maximum in the acceptance |
-| excursion of the vertex over the scan | <= 1.5 mm | a vertex dragged by the tails; the window is only +- 0.2 W ~ 5 mm, so 1.5 mm is already a third of it |
-| relative spread of W over the scan | <= 15 % | a curvature that is not the crystal's |
-| median W | 12 to 40 mm | a runaway fit; W comes out 21-28 mm everywhere it is accepted, against the 24.2 mm crystal pitch |
-| window inside the range the data span | -- | a cut that would fall outside the hodoscope |
+| weights of the run combination | number of selected events | 1/err² |
+| minimum events per run | 200 inside the fit window | 300 |
+| no run qualifies | point dropped | one pooled fit of all runs (`pooled = 1`) |
+| BES table | `rereco_<R>_withBES.csv`; a point without BES is dropped | `colls_energies_summary_<R>ohm.csv` |
+| central value | `√(σ² − BES² − sync²)` | `√(σ² − BES_cons² − sync²)` |
+| error bar | stat ⊕ drift ⊕ map syst | drift ⊕ stat ⊕ vertex syst ⊕ BES syst ⊕ sync syst |
+| N/S/C fit | per resistance (C held at 0.3 % at 500 Ω), then S and C common | per resistance; for 400 and 500 Ω S held at the 340 Ω value (`_S`), or S and C held (`_SC`) |
 
-The vertex and W returned are the medians over the scan, which is more stable than any
-single fit. Where the checks fail **there is no parabola to be found** at that energy
-in that view: the point is dropped from the parabola chain with the reason printed,
-rather than fitted anyway. That is the hodoscope acceptance limit, and it is drawn as
-such -- red title and the reason underneath -- by `hodo_windows.py`.
+Terms, all in percent of σ/μ:
 
-With `--runset standard` and `--yplane y1` the scan fails on 5 of the 58 (resistance,
-energy, view) combinations, and they are exactly the physically suspect ones:
+* **stat** — the larger of the error of the weighted mean and the weighted scatter of
+  the per-run values (undefined with one run, then the fit error).
+* **drift** — the extra error that brings the per-run σ/μ to χ²/ndf = 1 against a
+  constant; zero with one run or when the runs are already compatible. It is **added to
+  the error bar**, as the code does after merge #2 (the comment in the flat script says
+  the opposite of what the line below it does).
+* **sync** — `1.92·10⁻⁷ · E_true^2.5`, subtracted; its systematic is the shift of the
+  point when it is scaled by 1.3.
+* **BES** — subtracted; its systematic is the shift of the point between the
+  conservative and the nominal BES.
+* **vertex syst** (hodoscope) — RMS of the point over the four windows shifted by ±1 mm
+  in x and in y.
+* **map syst** (`uniforme`) — |σ corrected with the surface of the energy − σ corrected
+  with the surface of the resistance|, propagated through the subtraction.
+* **syst_tails** — |free tails − tails held at the pooled fit|, written to the CSVs for
+  information and in no error bar (the flat script computes it and drops it).
 
-| point | view | why |
+Only BES and synchrotron are subtracted from the central value. Everything else goes
+into the error bar. Changing this is a change of recipe, not of code.
+
+## 6. Run selection
+
+`runsets.py` is the single definition, imported by every stage that reads runs.
+
+| set | runs | why |
 |---|---|---|
-| 340 ohm 250 GeV | x | vertex moves by 2.8 mm across the fit ranges |
-| 340 ohm 250 GeV | y | only 3 of 6 fit ranges give a maximum |
-| 340 ohm 275 GeV | y | the window falls outside the hodoscope acceptance |
-| 400 ohm 20 GeV | x | W = 9 mm, not a crystal |
-| 400 ohm 20 GeV | y | no curvature in crystal units available |
+| `FILTER_50MHZ` | 20486–20500, 20552–20599 | 50 MHz CATIA filter: a different readout condition (`--runset filter50`) |
+| `HIGH_275` | 20652–20659 | the high-response population at 275 GeV |
+| `OUTLIERS` | 20491 (120 GeV, +1.5 % response), 20788, 21116 (60 GeV 500 Ω, table position), 21033–21037 (all the 50 GeV runs at 500 Ω, beam spread), 21119 (the only 80 GeV run at 500 Ω, halo) | excluded by decision; the last two groups are the "excellent run" selection of the slides |
 
-Those energies do not get a parabola window. They are **not thrown away**: the window
-falls back to the plateau definition, which needs no fit, the `window` column of the
-CSV records it (`x+y-plateau`, `y-plateau`) and the point is drawn with a grey ring
-and the legend entry *no parabola: plateau window*. Dropping them would have made them
-vanish from the plot without saying why.
+`--runset standard` (default) drops all three; the `centroid` pass also drops 20592 by
+hand (nominally 150 GeV, response of an 80 GeV run), as `run_all.sh` does. The point
+340 Ω 275 GeV is dropped everywhere (`--exclude 340:275`).
 
-**When no run has enough events.** The per-run fit needs 300 events. At **340 ohm
-250 GeV** the hodoscope cut keeps 846 events out of 50691, 2 %, spread over eight runs
-— about a hundred each — because the y window sits at `[+10.8, +14.5] mm`, against the
-edge of the acceptance: the beam is not on the part of the crystal the hodoscope sees.
-Rather than lose the point, the fit is then done **once on all the runs pooled**. The
-point comes out with the error of that single fit, the drift is undefined (there is no
-longer a run-to-run dispersion to measure), `nrun_* = 0` and `*_pooled = 1` record it,
-and it is drawn with a violet square and the legend entry *one pooled fit*. It is of
-course a point to treat with suspicion, which is why 250 GeV is in `--nofit-energies`
-by default.
+Runs of the standard set in the merged files (12 + 9 + 5 points). Not all of them enter
+the per-run fits: a run needs 300 events inside the cut (`codiceA`) or 200 inside the
+fit window (`uniforme`); the `runs` column of `02_per_energy.csv` lists the ones used.
 
-**Points excluded from the fit but kept in the plot.** `--nofit-energies`, 250 and
-275 GeV by default, are drawn as open markers and left out of the N/S/C fit. Every
-resolution figure is produced twice, once that way and once with all the points in the
-fit (`_allpoints`), for both chains, so that the weight of those two energies on the
-parameters can be read off directly:
-
-| chain | fit | 340 ohm | 400 ohm | 500 ohm |
-|---|---|---|---|---|
-| hodoscope | without 250, 275 | N 281 ± 8, S 2.88, chi2 56.4/8 | N 283 ± 3, S 0.00, chi2 50.4/5 | N 232 ± 19, S 3.25, chi2 18.1/5 |
-| hodoscope | all points | N 289 ± 8, S 2.62, chi2 93.7/10 | N 283 ± 3, S 0.01, chi2 51.7/6 | unchanged |
-| centroid | without 250, 275 | N 289 ± 6, S 3.19, chi2 79.6/8 | N 311 ± 3, S 0.01, chi2 47.0/5 | N 269 ± 8, S 2.25, chi2 125.1/5 |
-| centroid | all points | N 303 ± 5, S 2.75, chi2 196.2/10 | N 312 ± 3, S 0.00, chi2 47.6/6 | unchanged |
-
-Adding the two energies moves N by 8 MeV at 340 ohm with the hodoscope cut and by
-14 MeV with the centroid one, and roughly doubles the chi2 in both. 500 ohm has
-neither energy, so nothing changes there.
-
-**What differs between the two chains.** The position correction belongs only to the
-chain that cuts on the centroid: with the hodoscope the position does not enter the
-selection, so there is nothing to correct and POS_eff is not subtracted. The drift is
-computed and subtracted in both, each on its own selection.
-
-| | centroid cut | hodoscope cut |
+| R | E [GeV] | runs |
 |---|---|---|
-| non-uniformity correction | applied, per-run 2D paraboloid | not applied |
-| POS_eff subtracted | yes | no |
-| drift subtracted | yes, computed on this selection | yes, computed on this selection |
-| statistical error | sigma of the sigma, weights 1/sigma^2 | same |
+| 340 | 20 | 20895–20899 |
+| 340 | 30, 40, 60, 80, 100, 120, 150, 175 | one run each: 20541, 20530, 20528, 20526, 20521, 20474, 20535, 20539 |
+| 340 | 200 | 20427 20428 20429 20434 (Ruben's files: 20434 only) |
+| 340 | 225 | 20513 20514 20515 20517 20518 20615 20616 20617 |
+| 340 | 250 | 20481 20482 20560–20566 20585 |
+| 400 | 20 / 40 / 60 | 20753 / 20841–20843 / 20847–20849 |
+| 400 | 80 | 20909 20911–20915 20917–20920 |
+| 400 | 100 / 150 | 20769–20772 / 20780–20782 20786 20787 20789 20799–20801 |
+| 400 | 200 / 225 | 20700–20702 / 20676–20681 |
+| 400 | 250 | 20683 20684 20686–20689 20691–20696 20699 (Ruben's files: no 20690) |
+| 500 | 30 / 40 | 21045–21047 / 21090–21099 |
+| 500 | 60 / 100 / 150 | 21081 21082 / 21056–21058 / 20938 20950 20951 20953 20954 |
 
-Because of this the constant term of the two chains is not the same quantity: the
-centroid one has POS_eff removed, the hodoscope one still contains it. They must not
-be compared directly.
+Eight of the twelve 340 Ω points have a single run: no drift can be estimated there.
 
-### How to run it
+## 7. The hodoscope window
 
-The hodoscope chain is independent of the main chain except for two inputs, which must
-exist first:
+x is the mean of the two x planes, y is plane y1 (y2 is jagged below zero); exactly one
+cluster is required in each of the three planes, which keeps about 35 % of the events.
+The response ⟨A_tot⟩ is profiled against each coordinate on the core of the beam and
+fitted with a parabola over `[peak − h, peak + h]` for h = 5 … 10 mm; the vertex is the
+median over the scan, accepted when it moves by less than 5 mm and the width by less
+than 70 % across the scan. The window is vertex ± 0.182 · 22 mm. Where the scan fails,
+`resolution_hodo.py` carries hand-set vertices (`BAD_PARABOLA_*` in
+`pipeline/hodoscope_window.py`, 340 Ω 225 GeV in y, 400 Ω 20 GeV in y, 500 Ω 30–80 GeV
+in y and 50 GeV in x); those points are drawn with an open circle. `01_windows.csv`
+records the window, the vertex, the width and why the scan failed, point by point.
 
-| input | produced by | used for |
-|---|---|---|
-| `plot/profili/profili_pernorm.csv` | `profili_pernorm.py` | the response curvature in crystal units, `c_crystal`, from which `W = sqrt(c_crystal / c_mm)`. Needed only by `--window parabola` |
-| `plot/bes/rereco_<R>_withBES.csv` | the beam-energy-spread study | the BES term subtracted from every point |
+## 8. Known limits
 
-`drift_dcb_all.py` is **not** needed: `resolution_hodo.py` fits the runs itself and
-computes its own drift on the selection in use.
+* The double Crystal Ball with free tails has near-degenerate minima on a few
+  low-statistics runs. ROOT's Minuit2 and iminuit's stop at points 1–3·10⁻⁴ apart in
+  σ/μ, or disagree on whether HESSE failed, on about 14 of 184 runs; on the final points
+  this is at most 0.0013 %. Same tolerance (0.1), same steps, same seeds: what differs is
+  the two builds of Minuit2. Identical CSVs would need iminuit for the per-run fit; the
+  choice was to keep every fit in ROOT.
+* `--window plateau` of `resolution_hodo.py` is not ported: after merge #2 it ends in a
+  `NameError` in the flat script too.
+* The `flat` method of `uniformita_pos.py` and a few diagnostic figures of
+  `drift_dcb_all.py` are not ported; the list is in `pipeline/README.md`.
+* The August reco of this Mac and Ruben's reco of 1 September differ in the events per
+  run and in the run lists at 340 Ω 200 GeV and 400 Ω 250 GeV: the slide numbers come
+  out only on his files.
+
+## 9. The flat scripts
+
+The scripts of the repository root are the previous, monolithic version of the same
+analysis and the reference the pipeline was validated against (`pipeline/README.md`,
+sections on validation). They need `numpy uproot iminuit matplotlib`.
 
 ```bash
-cd <working directory>          # the one containing reco_340ohm/ etc.
-
-# 0  prerequisite: the crystal-unit curvature (skip if plot/profili is up to date)
-python3 plot/profili_pernorm.py --base . --outdir plot/profili \
-    --resistances 340 400 500
-
-# 1  calibration on its own: offsets, W per energy, and the list of points
-#    where the parabola scan finds nothing. Useful as a check before the rest
-python3 plot/hodoscope_calib.py --base . --outdir plot/hodo_scan --plotdir plot \
-    --resistances 340 400 500
-
-# 2  the resolution, once per window definition, into two directories
-python3 plot/resolution_hodo.py --base . --outdir plot/hodo_parab --besdir plot/bes \
-    --plotdir plot --resistances 340 400 500 --window parabola
-python3 plot/resolution_hodo.py --base . --outdir plot/hodo_plateau --besdir plot/bes \
-    --plotdir plot --resistances 340 400 500 --window plateau
-
-# 3  the picture behind each cut (slow, about two minutes per resistance)
-python3 plot/hodo_windows.py --base . --outdir plot/hodo_parab --plotdir plot \
-    --resistances 340 400 500 --window parabola
-python3 plot/hodo_windows.py --base . --outdir plot/hodo_plateau --plotdir plot \
-    --resistances 340 400 500 --window plateau
+bash run_all_hodoscope.sh      # resolution_hodo.py --window parabola: the "codiceA" recipe
+bash run_all.sh                # drift_dcb_all -> uniformita_pos/maps -> resolution_final_uniforme: the "uniforme" recipe
 ```
 
-Each call writes both chains, centroid and hodoscope, into the same CSV: step 2 is run
-once per **window definition**, not once per chain.
+`resolution_hodo.py` writes `resolution_hodo.csv` (columns `hodo_*` and `cen_*`),
+`systematics.csv` and `per_run.csv`, and is what produced the slides of the ECAL Days
+(10 September 2026). `root/run_fit_root.sh` repeats the N/S/C fits in ROOT from the
+CSVs of the `uniforme` chain.
 
-Options worth knowing:
-
-| option | default | what it does |
-|---|---|---|
-| `--window` | `plateau` | `parabola` or `plateau`, see above. Pass it explicitly: the default is the plateau |
-| `--yplane` | `y1` | which y plane to cut on. `y2` is kept only for comparison |
-| `--half` | `0.2` | half-window in crystal units, the same as the centroid cut |
-| `--tol` | `0.005` | how far the response may fall inside the plateau window |
-| `--tails` | `both` | `free`, `fixed`, or `both` (nominal free, `|free - fixed|` carried as a systematic) |
-| `--nofit-energies` | `250 275` | drawn but left out of the N/S/C fit |
-| `--runset` | `standard` | `standard`, `filter50` or `all`, from `runsets.py` |
-| `--exclude-runs` | — | extra run numbers to drop |
-| `--exclude` | — | whole points, as `R:E`, e.g. `340:275` |
-
-To check one point by hand, for instance why an error bar looks large:
-
-```bash
-python3 plot/dcb_error_check.py --base . --plotdir plot \
-    --resistance 500 --energy 60 --nboot 40
-```
-Outputs of `resolution_hodo.py`:
-
-| file | what |
-|---|---|
-| `resolution_hodo.csv` | both selections point by point: which window was used, its limits, the response drop inside it, events kept, and for each chain sigma, statistical error, drift, the observed chi2/ndf of the per-run sigmas, and the corrected value |
-| `systematics.csv` | one row per (resistance, energy, chain): every contribution side by side — sigma measured, statistical error, fit-model systematic, total bar, BES, synchrotron, POS_eff, drift, chi2 of the peaks, corrected sigma — plus each term as a percentage of the measured sigma, so the dominant one is visible at a glance |
-| `per_run.csv` | the same broken down **run by run**: events, sigma with free and with fixed tails and their difference, peak and its error, the deviation of that run's peak from the weighted mean in percent and its pull, the same for sigma, and alongside them the energy-level terms the run contributes to. The drift is an energy-level quantity by construction, but what generates it is here: `peak_pull` says which run is pulling it |
-| `resolution_terms_<chain>.png` | the three resistances, with `--nofit-energies` drawn but left out of the fit, and the size of every subtracted term in the panel below |
-| `resolution_terms_<chain>_allpoints.png` | the same with **every** point inside the fit, so the weight of those energies on N, S and C is visible. Both variants are produced for **both** chains, centroid and hodoscope |
-| `drift_check_<chain>_<R>ohm.png` | one panel per energy: the per-run sigma/mu with their errors, the weighted mean, the drift band, and the observed chi2/ndf written in the title — green where it is already <= 1 and the drift is therefore zero, red where an extra error is needed, grey where there is a single run |
-
-Outputs of `hodo_windows.py`, per resistance and per view:
-
-| file | what it shows |
-|---|---|
-| `hodo_windows_<view>_<R>ohm.png` | one panel per energy, axes zoomed on the parabola: profile with errors, the accepted parabola over the range it was scanned on, the vertex, the window |
-| `hodo_windows_<view>_<R>ohm_full.png` | the same panels on a **common scale**, x from -15 to +15 mm and y from 0.90 up, so that panels can be compared with each other and the tails and the edges of the acceptance are visible |
-
-`hodoscope_calib.py` holds the shared machinery -- the response profile, the parabola
-scan and its acceptance checks -- and run on its own writes the offset and the scale
-per energy, `hodoscope_calib.csv`, plus a plot of the vertex and of W against energy
-with the rejected points drawn as open red markers.
+Conventions: no single-letter variables in `pipeline/`; the repository is code only;
+the working copy `energy-reso-fitter/plot/pipeline/` is kept identical to `pipeline/`
+by hand (`cmp` file by file).
