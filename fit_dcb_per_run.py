@@ -137,8 +137,8 @@ def main():
     root_file = ROOT.TFile(os.path.join(args.outdir, "01_dcb_fits.root"), "RECREATE")
 
     fit_rows, window_rows = [], []
-    for resistance, energy, path in common.resistance_energy_pairs(args.base, args.resistances,
-                                                                    excluded_points):
+    for resistance, energy, path in common.resistance_energy_pairs(args.base, args.resistances, excluded_points):
+
         print(f"[{resistance} ohm {energy:>4} GeV] {os.path.basename(path)}", flush=True)
         events = common.read_events(path, args.amplitude)
         base = (events["A_tot"] > common.A_TOT_MIN) & common.runset_mask(events["run"], dropped,
@@ -150,7 +150,9 @@ def main():
                           fallback="")
 
         hodo_x, hodo_y = common.hodoscope_xy(events, args.yplane)
-        info = hodoscope_window.hodoscope_windows(hodo_x, hodo_y, events["A_tot"], base, resistance, energy, half)
+
+        info = hodoscope_window.hodoscope_windows(hodo_x, hodo_y, events["A_tot"], base, resistance, energy, half, args.outdir)
+
         for coordinate in ("x", "y"):
             scan = info["scan"][coordinate]
             window_row.update({f"{coordinate}_vertex": scan["vertex"],

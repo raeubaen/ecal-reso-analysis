@@ -17,6 +17,7 @@ fitter behind TGraphErrors::Fit("pol2").
 """
 
 import numpy as np
+import os
 import ROOT
 
 import common
@@ -68,7 +69,7 @@ def profile_peak(centres, means):
     return float(centres[int(np.argmax(smoothed))])
 
 
-def parabola_fit(centres, means, errors, low, high):
+def parabola_fit(centres, means, errors, low, high, resistance, energy, outdir):
     """Weighted quadratic on the profile points inside [low, high]. Returns
     (vertex, relative curvature in %/mm^2, chi2/ndf, n) or None when the fit has no
     maximum inside its own range."""
@@ -79,6 +80,20 @@ def parabola_fit(centres, means, errors, low, high):
     graph = common.make_graph(centres[inside], means[inside], errors[inside])
     quadratic = ROOT.TF1(common.unique_name("hodo_pol2"), "pol2", low, high)
     graph.Fit(quadratic, "QN")                 # polynomial: ROOT uses the linear fitter
+
+    canvas = ROOT.TCanvas("hodo_profile", "Hodoscope profile", 800, 600)
+    graph.SetTitle(f"{energy}GeV_{resistance}ohm;hodoscope coordinate [mm];<A_tot>")
+    graph.SetMarkerStyle(20)
+    graph.Draw("AP")
+    quadratic.SetLineColor(ROOT.kRed)
+    quadratic.SetLineWidth(2)
+    quadratic.Draw("SAME")
+    canvas.Update()
+
+    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{energy}GeV_{resistance}ohm.png"))
+    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{energy}GeV_{resistance}ohm.pdf"))
+    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{energy}GeV_{resistance}ohm.root"))
+
     constant, linear, curvature = (quadratic.GetParameter(index) for index in range(3))
     if curvature >= 0:
         return None
@@ -89,7 +104,7 @@ def parabola_fit(centres, means, errors, low, high):
     return vertex, float(relative_curvature), quadratic.GetChisquare() / max(n_points - 3, 1), n_points
 
 
-def parabola_scan(profile):
+def parabola_scan(profile, resistance, energy, outdir):
     """Vertex from the scan of the fit half-width. Always returns a
     dict with 'ok' and, when not ok, 'why'."""
     out = dict(ok=False, why="", vertex=np.nan, width=np.nan, vertex_spread=np.nan,
@@ -103,7 +118,7 @@ def parabola_scan(profile):
 
     vertices, widths, chi2s = [], [], []
     for half_width in SCAN_HALVES:
-        fit = parabola_fit(centres, means, errors, peak - half_width, peak + half_width)
+        fit = parabola_fit(centres, means, errors, peak - half_width, peak + half_width, resistance, energy, outdir)
         if fit is None:
             continue
         vertices.append(fit[0])
@@ -126,7 +141,7 @@ def parabola_scan(profile):
     return out
 
 
-def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half):
+def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half, outdir):
     """The (low, high) window in x and in y, with the scan diagnostics.
 
     Returns dict(windows={'x': (lo, hi) | None, 'y': ...}, fallback=[coords],
@@ -140,7 +155,7 @@ def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half
 
         profile = response_profile(coordinate[core], a_tot[core])
 
-        scan = parabola_scan(profile)
+        scan = parabola_scan(profile, resistance, energy, outdir)
 
         scans[coordinate_name] = scan
         why[coordinate_name] = "" if scan["ok"] else scan["why"]
