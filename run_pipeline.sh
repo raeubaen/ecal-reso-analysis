@@ -1,2 +1,2 @@
-bash -c "source _pipeline.sh"
+bash -c 'source _pipeline.sh "$@"' -- "$@"
 

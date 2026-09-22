@@ -126,17 +126,21 @@ def main():
     parser.add_argument("--exclude-runs", nargs="*", type=int, default=[])
     parser.add_argument("--exclude", nargs="*", default=["340:275"],
                         help="R:E points dropped entirely (default 340:275, as both drivers)")
+    parser.add_argument("--fallback-file", type=str, default="fallback_hodo_26.py")
+
     runsets.add_argument(parser)
     args = parser.parse_args()
 
     half = args.half
     dropped, kept_only = runsets.resolve(args.runset, args.exclude_runs)
+    print(dropped, kept_only)
     excluded_points = common.parse_excluded_points(args.exclude)
     os.makedirs(args.outdir, exist_ok=True)
     common.style()
     root_file = ROOT.TFile(os.path.join(args.outdir, "01_dcb_fits.root"), "RECREATE")
 
     fit_rows, window_rows = [], []
+    print("pre for")
     for resistance, energy, path in common.resistance_energy_pairs(args.base, args.resistances, excluded_points):
 
         print(f"[{resistance} ohm {energy:>4} GeV] {os.path.basename(path)}", flush=True)
@@ -151,7 +155,7 @@ def main():
 
         hodo_x, hodo_y = common.hodoscope_xy(events, args.yplane)
 
-        info = hodoscope_window.hodoscope_windows(hodo_x, hodo_y, events["A_tot"], base, resistance, energy, half, args.outdir)
+        info = hodoscope_window.hodoscope_windows(hodo_x, hodo_y, events["A_tot"], base, resistance, energy, half, args.outdir, args.fallback_file)
 
         for coordinate in ("x", "y"):
             scan = info["scan"][coordinate]

@@ -22,6 +22,9 @@ import ROOT
 
 import common
 
+import json
+import importlib
+
 CORE_FRACTION = 0.10             # |A_tot / median - 1| < CORE_FRACTION defines the beam core
 PROFILE_NBINS, PROFILE_MIN_PER_BIN, PROFILE_MIN_EVENTS = 40, 150, 3000
 SCAN_HALVES = (5., 6., 7., 8., 9., 10.)    # fit half-widths around the maximum [mm]
@@ -32,11 +35,6 @@ VERTEX_SHIFT_MM = 1.                       # +- shift of the window for the vert
 
 COORDINATES = ("x", "y")
 
-# hand-set vertices [mm] and half-widths [mm] of resolution_hodo.py
-BAD_PARABOLA_VERTEX = {"x": {(500, 50): -6.5},
-                       "y": {(400, 20): 11, (340, 225): 4, (500, 80): -6.8, (500, 30): 8,
-                             (500, 40): -5, (500, 50): 2, (500, 60): -6}}
-BAD_PARABOLA_HALF = {"x": {}, "y": {(400, 20): 1.98}}
 
 
 def response_profile(coordinate, response):
@@ -69,7 +67,7 @@ def profile_peak(centres, means):
     return float(centres[int(np.argmax(smoothed))])
 
 
-def parabola_fit(centres, means, errors, low, high, resistance, energy, outdir):
+def parabola_fit(centres, means, errors, low, high, resistance, energy, outdir, coordinate_name):
     """Weighted quadratic on the profile points inside [low, high]. Returns
     (vertex, relative curvature in %/mm^2, chi2/ndf, n) or None when the fit has no
     maximum inside its own range."""
@@ -90,9 +88,9 @@ def parabola_fit(centres, means, errors, low, high, resistance, energy, outdir):
     quadratic.Draw("SAME")
     canvas.Update()
 
-    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{energy}GeV_{resistance}ohm.png"))
-    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{energy}GeV_{resistance}ohm.pdf"))
-    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{energy}GeV_{resistance}ohm.root"))
+    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{coordinate_name}_{energy}GeV_{resistance}ohm.png"))
+    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{coordinate_name}_{energy}GeV_{resistance}ohm.pdf"))
+    common.save_canvas(canvas, os.path.join(outdir, "parabola", f"parabola_{coordinate_name}_{energy}GeV_{resistance}ohm.root"))
 
     constant, linear, curvature = (quadratic.GetParameter(index) for index in range(3))
     if curvature >= 0:
@@ -104,7 +102,7 @@ def parabola_fit(centres, means, errors, low, high, resistance, energy, outdir):
     return vertex, float(relative_curvature), quadratic.GetChisquare() / max(n_points - 3, 1), n_points
 
 
-def parabola_scan(profile, resistance, energy, outdir):
+def parabola_scan(profile, resistance, energy, outdir, coordinate_name):
     """Vertex from the scan of the fit half-width. Always returns a
     dict with 'ok' and, when not ok, 'why'."""
     out = dict(ok=False, why="", vertex=np.nan, width=np.nan, vertex_spread=np.nan,
@@ -118,7 +116,7 @@ def parabola_scan(profile, resistance, energy, outdir):
 
     vertices, widths, chi2s = [], [], []
     for half_width in SCAN_HALVES:
-        fit = parabola_fit(centres, means, errors, peak - half_width, peak + half_width, resistance, energy, outdir)
+        fit = parabola_fit(centres, means, errors, peak - half_width, peak + half_width, resistance, energy, outdir, coordinate_name)
         if fit is None:
             continue
         vertices.append(fit[0])
@@ -141,7 +139,16 @@ def parabola_scan(profile, resistance, energy, outdir):
     return out
 
 
-def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half, outdir):
+def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half, outdir, fallback_file):
+
+    fallback_module = importlib.import_module(fallback_file.replace(".py", ""))
+
+    globals().update(
+        {nome: getattr(fallback_module, nome)
+         for nome in dir(fallback_module)
+         if not nome.startswith("_")}
+    )
+
     """The (low, high) window in x and in y, with the scan diagnostics.
 
     Returns dict(windows={'x': (lo, hi) | None, 'y': ...}, fallback=[coords],
@@ -155,7 +162,7 @@ def hodoscope_windows(hodo_x, hodo_y, a_tot, base_mask, resistance, energy, half
 
         profile = response_profile(coordinate[core], a_tot[core])
 
-        scan = parabola_scan(profile, resistance, energy, outdir)
+        scan = parabola_scan(profile, resistance, energy, outdir, coordinate_name)
 
         scans[coordinate_name] = scan
         why[coordinate_name] = "" if scan["ok"] else scan["why"]
