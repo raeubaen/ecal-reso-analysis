@@ -29,7 +29,11 @@ ROOT.TH1.AddDirectory(False)
 ROOT.Math.MinimizerOptions.SetDefaultMinimizer("Minuit2")
 
 # ------------------------------------------------------------------ constants
-SCALE = {340: 3500 / 150., 400: 1080 / 40., 500: 3340 / 100.}   # ADC per GeV, from fit.sh
+SCALE = {
+  "a3x3": {340: 3500 / 150., 400: 1080 / 40., 500: 3340 / 100.},
+  "a1x1": {340: 2450 / 150., 400: 756 / 40., 500: 2238 / 100.},
+}   # ADC per GeV, from fit.sh
+
 FILES = {340: ("reco_340ohm", "*_merged.root"),
          400: ("reco_400ohm", "*_400_merged.root"),
          500: ("reco_500ohm", "*_500_merged.root")}
@@ -37,10 +41,8 @@ TRUE_ENERGY = {20: 20.00, 30: 30.00, 40: 39.99, 50: 49.98, 60: 59.97, 80: 79.90,
                100: 99.75, 120: 119.48, 150: 148.73, 175: 172.67, 200: 196.08,
                225: 218.82, 250: 240.76, 275: 261.77, 300: 281.74}
 
-ETA_CENTRE, PHI_CENTRE = 18., 6.
 A_TOT_MIN = 100.                 # threshold on the A_tot branch, in every selection
 SYNCHROTRON_COEFF = 1.92e-7      # sigma/E [%] = coeff * E_true^2.5
-CRYSTAL_WINDOW = 3               # the 3x3 matrix around (18, 6) summed for the amplitude
 
 # runs with fewer events than this are not fitted individually
 MIN_EVENTS_PER_RUN = 300
@@ -88,29 +90,27 @@ def parse_excluded_points(items):
     return {tuple(int(value) for value in item.split(":")) for item in items}
 
 
-# ------------------------------------------------------------------ events
-ROOT.gInterpreter.Declare(r'''
+ROOT.gInterpreter.Declare(rf'''
 // sum of the amplitudes of the crystals inside a (2*half-1)x(2*half-1) matrix
 // around ieta = 18, iphi = 6: half = 2 gives the 3x3 (ieta 17-19, iphi 5-7)
 double pipeline_sum_matrix(const ROOT::RVecD &amplitude,
                            const ROOT::RVec<unsigned short> &ieta,
-                           const ROOT::RVec<unsigned short> &iphi, int half) {
+                           const ROOT::RVec<unsigned short> &iphi, int eta_center, int phi_center, int half) {{
   double total = 0.;
   for (size_t index = 0; index < amplitude.size(); ++index)
-    if (std::abs((int)ieta[index] - 18) < half && std::abs((int)iphi[index] - 6) < half)
+    if (std::abs((int)ieta[index] - eta_center) < half && std::abs((int)iphi[index] - phi_center) < half)
       total += amplitude[index];
   return total;
-}
+}}
+
 // first hodoscope cluster of a plane, NaN when the plane has none
-double pipeline_first_or_nan(const ROOT::RVecF &positions) {
+double pipeline_first_or_nan(const ROOT::RVecF &positions) {{
   return positions.size() ? (double)positions[0] : std::nan("");
-}
+}}
 ''')
 
-MATRIX_HALF = int((CRYSTAL_WINDOW + 1) / 2)
 
-
-def read_events(path, amplitude="a3x3"):
+def read_events(path, ETA_CENTRE, PHI_CENTRE, amplitude="a3x3"):
     """All the per-event quantities the pipeline uses, as numpy arrays.
 
     amplitude  a3x3  the 3x3 sum around (18, 6), rebuilt from the A branch, as in
@@ -122,9 +122,15 @@ def read_events(path, amplitude="a3x3"):
     frame = ROOT.RDataFrame("h4_reco", path)
     if amplitude == "a3x3":
         frame = frame.Define("amplitude",
-                             f"pipeline_sum_matrix(A, sel_ieta, sel_iphi, {MATRIX_HALF})")
+                             f"pipeline_sum_matrix(A, sel_ieta, sel_iphi, {ETA_CENTRE}, {PHI_CENTRE}, 2)")
     elif amplitude == "atot":
         frame = frame.Define("amplitude", "A_tot")
+    elif amplitude == "a1x1":
+        frame = frame.Define("amplitude",
+                             f"pipeline_sum_matrix(A, sel_ieta, sel_iphi, {ETA_CENTRE}, {PHI_CENTRE}, 1)")
+    elif amplitude == "a5x5":
+        frame = frame.Define("amplitude",
+                             f"pipeline_sum_matrix(A, sel_ieta, sel_iphi, {ETA_CENTRE}, {PHI_CENTRE}, 3)")
     else:
         raise ValueError(f"unknown amplitude {amplitude}")
     columns = ["run", "spill", "evt", "A_tot", "amplitude", "pos_eta", "pos_phi"]
@@ -205,11 +211,11 @@ def histogram_stats(counts, centres, low, high):
     return mean, math.sqrt(max(variance, 0.)), total
 
 
-def fit_window(values, energy, resistance):
+def fit_window(values, energy, resistance, amplitude):
     counts, edges = np.histogram(values, bins=HISTOGRAM_NBINS, range=(HISTOGRAM_LO, HISTOGRAM_HI))
     counts = counts.astype(float)
     centres = 0.5 * (edges[:-1] + edges[1:])
-    nominal = SCALE[resistance] * energy
+    nominal = SCALE[amplitude][resistance] * energy
     low, high = nominal * 0.95, nominal * 1.05
     for _ in range(2):
         mean, rms, _total = histogram_stats(counts, centres, low, high)
@@ -219,8 +225,8 @@ def fit_window(values, energy, resistance):
     return low, high
 
 
-def mode_window(values, energy, resistance):
-    nominal = SCALE[resistance] * energy
+def mode_window(values, energy, resistance, amplitude):
+    nominal = SCALE[amplitude][resistance] * energy
     near = values[(values > 0.5 * nominal) & (values < 1.3 * nominal)]
     if len(near) < 100:
         return None
@@ -297,7 +303,7 @@ def _copy_result(result, hesse_ok):
                 hesse_ok=hesse_ok)
 
 
-def fit_dcb(values, energy, resistance, fixed_tails=None):
+def fit_dcb(values, energy, resistance, amplitude, fixed_tails=None):
     """Double Crystal Ball fit of one set of amplitudes: uniformita_pos.fit_dcb.
 
     the binning is
@@ -315,9 +321,9 @@ def fit_dcb(values, energy, resistance, fixed_tails=None):
     their errors, chi2, ndf, the tails, the window, the number of events inside it and
     the histogram + TF1 (to be written to a ROOT file or drawn).
     """
-    window = fit_window(values, energy, resistance)
+    window = fit_window(values, energy, resistance, amplitude)
     if not window_is_usable(window, values):
-        window = mode_window(values, energy, resistance)
+        window = mode_window(values, energy, resistance, amplitude)
     if not window_is_usable(window, values):
         return None
     low, high = window

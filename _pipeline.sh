@@ -8,6 +8,7 @@ BASE=${1:-/eos/cms/store/group/dpg_ecal/comm_ecal/upgrade/testbeam/ECALTB_H4_Jun
 OUT=${2:-out/}
 BES=${3:-bes2026/}
 FALLBACK=${4:-fallback_hodo_2026.py}
+
 PY=${PYTHON:-python3}
 
 echo BASE=$BASE

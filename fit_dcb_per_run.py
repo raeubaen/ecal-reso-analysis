@@ -114,10 +114,12 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base", required=True, help="directory containing reco_<R>ohm/")
     parser.add_argument("--outdir", required=True)
-    parser.add_argument("--amplitude", choices=("a3x3", "atot"), default="a3x3",
+    parser.add_argument("--amplitude", choices=("a3x3", "atot", "a1x1", "a5x5"), default="a3x3",
                         help="a3x3 = sum of the 3x3 matrix rebuilt from A (default, as "
                              "resolution_hodo.py); atot = the A_tot branch")
     parser.add_argument("--resistances", nargs="+", type=int, default=[340, 400, 500])
+    parser.add_argument("--eta-center", type=int, default=18)
+    parser.add_argument("--phi-center", type=int, default=6)
     parser.add_argument("--yplane", choices=("y1", "y2"), default="y1")
     parser.add_argument("--tails", choices=("free", "fixed", "both"), default="both",
                         help="DCB tails per run: free, held at the pooled values, or both")
@@ -144,7 +146,7 @@ def main():
     for resistance, energy, path in common.resistance_energy_pairs(args.base, args.resistances, excluded_points):
 
         print(f"[{resistance} ohm {energy:>4} GeV] {os.path.basename(path)}", flush=True)
-        events = common.read_events(path, args.amplitude)
+        events = common.read_events(path, args.eta_center, args.phi_center, args.amplitude)
         base = (events["A_tot"] > common.A_TOT_MIN) & common.runset_mask(events["run"], dropped,
                                                                           kept_only)
 
@@ -195,7 +197,7 @@ def main():
         for variation, cut in cuts.items():
             pooled_fit = None
             if cut.sum() >= common.MIN_EVENTS_POOLED:
-                pooled_fit = common.fit_dcb(amplitude[cut], energy, resistance)
+                pooled_fit = common.fit_dcb(amplitude[cut], energy, resistance, args.amplitude)
             tails = pooled_fit["tails"] if (pooled_fit and args.tails != "free") else None
             if pooled_fit is not None:
                 fit_rows.append(fit_row(pooled_fit, resistance, energy, args, variation, 0,
@@ -204,8 +206,10 @@ def main():
             for this_run in sorted(int(value) for value in np.unique(run[cut])):
                 in_run = cut & (run == this_run)
                 if in_run.sum() < common.MIN_EVENTS_PER_RUN:
+                    print("in_run.sum() < common.MIN_EVENTS_PER_RUN")
                     continue
                 values = amplitude[in_run]
+                print(values)
                 if args.tails == "fixed":
                     modes = [("fixed", tails)] if tails else []
                 elif args.tails == "both" and tails:
@@ -213,8 +217,9 @@ def main():
                 else:
                     modes = [("free", None)]
                 for tails_mode, fixed_tails in modes:
-                    fit = common.fit_dcb(values, energy, resistance, fixed_tails=fixed_tails)
+                    fit = common.fit_dcb(values, energy, resistance, args.amplitude, fixed_tails=fixed_tails)
                     if fit is None:
+                        print("BAD FIT!")
                         continue
                     fit_rows.append(fit_row(fit, resistance, energy, args, variation, this_run,
                                             tails_mode, in_run.sum()))
